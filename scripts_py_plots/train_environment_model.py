@@ -11,9 +11,10 @@
         - execution of the "test_training" function in 'run_training.py' in order to generate trajectories within the
           CFD environment (https://github.com/OFDataCommittee/drlfoam)
 """
-import glob
 import os
+import glob
 import pickle
+import psutil
 import torch as pt
 import regex as re
 import numpy as np
@@ -164,6 +165,7 @@ def train_model(model: pt.nn.Module, state_train: pt.Tensor, action_train: pt.Te
         # save model after every 250 epochs, also save best model
         if epoch % 250 == 0:
             pt.save(model.state_dict(), f"{save_dir}/model_training_epoch{epoch}.pt")
+            print_core_temp()
 
         if save_model:
             if training_loss[-1] < best_train_loss:
@@ -307,6 +309,17 @@ def denormalize_data(x: pt.Tensor, x_min_max: list) -> pt.Tensor:
     """
     # x = (x_max - x_min) * x_norm + x_min
     return (x_min_max[1] - x_min_max[0]) * x + x_min_max[0]
+
+
+def print_core_temp():
+    """
+    :brief: prints the current processor temperature of all available cores for monitoring
+    :return: None
+    """
+    temps = psutil.sensors_temperatures()["coretemp"]
+    print(f"{(4 * len(temps) + 1) * '-'}\n\tcore number\t|\ttemperature [deg]\t \n{(4 * len(temps) + 1) * '-'}")
+    for i in range(len(temps)):
+        print(f"\t\t{i}\t\t|\t{temps[i][1]}")
 
 
 def dataloader_wrapper(settings: dict) -> dict:

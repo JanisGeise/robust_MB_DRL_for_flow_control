@@ -6,14 +6,94 @@
           states, cl and cd
 
     dependencies:
-        - 'trainModel.py'
+        - 'train_environment_model.py'
 
     prerequisites:
         - execution of the "test_training" function in 'run_training.py' in order to generate trajectories within the
           CFD environment (https://github.com/OFDataCommittee/drlfoam)
 """
+import itertools
 import seaborn as sns
+from shutil import rmtree
+from multiprocessing import Pool, cpu_count
+
 from train_environment_model import *
+
+
+def parameter_study_wrapper(settings: dict, trajectories: dict, network_architecture: list, counter: int) -> list:
+    """
+    :brief: executes training-, validation and testing of an environment model as well as the loss calculation
+    :param settings: setup containing all the paths etc.
+    :param trajectories: sampled trajectories in the CFD environment split into training-, validation and test data
+    :param network_architecture: tuple containing the number of neurons and hidden layers as (neurons, layers)
+    :param counter: overall number of process to keep the calculations in separate directories
+    :return: list containing L2- and L1-loss wrt the network architecture as
+             [(neurons, layers), [[L2-losses], [L1-losses]]
+    """
+    neurons, layers = network_architecture[0], network_architecture[1]
+    print(f"process {counter}: starting calculation for network with {neurons} neurons and {layers} layers")
+
+    # make temporary directory for each process
+    dir_name = f"/tmp_no_{counter}"
+    settings["model_dir"] += dir_name
+
+    predictions, _, _ = run_parameter_study(settings, trajectories, n_neurons=neurons, n_layers=layers,
+                                            epochs=settings["epochs"])
+
+    # calculate L2- and L1-loss for each neuron-layer combination based on predicted trajectories
+    loss = calculate_error_norm(predictions, trajectories["cl_test"], trajectories["cd_test"],
+                                trajectories["states_test"])
+
+    # delete tmp directory and everything in it
+    rmtree(settings["load_path"] + settings["model_dir"])
+
+    return [(neurons, layers), loss]
+
+
+def sort_losses_into_tensor(n_neurons: list, n_layers: list, loss_data: list) -> pt.Tensor:
+    """
+    :brief: sorts the list containing the losses wrt to network architecture into single tensor
+    :param n_neurons: list containing all the number of neurons calculated
+    :param n_layers: list containing all the number of hidden layers calculated
+    :param loss_data: list containing L2- and L1-loss wrt the network architecture as
+                      [(neurons, layers), [[L2-losses], [L1-losses]]
+    :return: list containing L2- and L1-loss wrt the network architecture as
+             [(neurons, layers), [[L2-losses], [L1-losses]]
+    """
+    # allocate tensor for storing the L1- and L2 loss of states, cl and cd for each neuron-layer combination
+    loss = pt.zeros((len(n_neurons), len(n_layers), 2, 3))
+
+    # map the (neurons, layers)-combination back to the order as defined in the setup dict
+    # to do: find better way for sorting, because this is quite inefficient...
+    for neurons in range(len(n_neurons)):
+        for layers in range(len(n_layers)):
+            for entry in range(len(loss_data)):
+                if n_neurons[neurons] == loss_data[entry][0][0] and n_layers[layers] == loss_data[entry][0][1]:
+                    loss[neurons, layers, :, :] = loss_data[entry][1]
+    return loss
+
+
+def manage_network_training(settings: dict, trajectory_data: dict) -> pt.Tensor:
+    """
+    :brief: manages the execution of the parameter study with multiple processes
+    :param settings: setup containing all the path etc.
+    :param trajectory_data: sampled trajectories in the CFD environment split into training-, validation and test data
+    :return: tensor containing the L2- and L1-norm of the error, the data is stored as
+             [[L2-norm states, L2-norm cl, L2-norm cd], [L1-norm states, L1-norm cl, L1-norm cd]]
+    """
+    # create list with all possible combinations of neurons and hidden layers
+    networks = list(itertools.product(*[settings["n_neurons"], settings["n_layers"]]))
+
+    # create tuple with args -> map args to function and process
+    args = [(settings, trajectory_data, param, proc_idx) for proc_idx, param in enumerate(networks)]
+
+    with Pool(min(settings["n_processes"], len(networks))) as proc:
+        results = proc.starmap(parameter_study_wrapper, args)
+
+    # sort losses into tensor based on n_neurons and n_layers
+    error = sort_losses_into_tensor(settings["n_neurons"], settings["n_layers"], results)
+
+    return error
 
 
 def calculate_error_norm(pred_trajectories: list, cl_test: pt.Tensor, cd_test: pt.Tensor,
@@ -89,7 +169,6 @@ def plot_losses(settings: dict, loss_data: pt.Tensor, parameter: str = "cd") -> 
         # since seaborn starts plotting as top-left corner -> axis needs to be inverted
         ax[i].invert_yaxis()
     fig.subplots_adjust(hspace=0.5)
-    # fig.suptitle(f"{parameter}")
     fig.tight_layout()
     plt.savefig(settings["load_path"] + settings["model_dir"] +
                 f"/plots/l2_l1_error_vs_model_parameters_{parameter}.png", dpi=600)
@@ -100,34 +179,25 @@ if __name__ == "__main__":
     # Setup
     setup = {
         "load_path": r"/media/janis/Daten/Studienarbeit/drlfoam/examples/test_training3/",
-        "model_dir": "Results_model/normalized_data/influenceModelArchitecture",  # name of directory for plots
+        "model_dir": "Results_model/normalized_data/influenceModelArchitecture/EnvironmentModel_3timesteps",
         "normalize": True,                                  # True: input data will be normalized to interval of [1, 0]
-        "n_input_steps": 2,                                 # initial time steps as input -> n_input_steps > 1
+        "n_input_steps": 3,                                 # initial time steps as input -> n_input_steps > 1
         "len_trajectory": 200,                              # trajectory length for training the environment model
         "ratio": (0.65, 0.3, 0.05),                         # splitting ratio for train-, validation and test data
         "n_neurons": [10, 25, 50, 100, 200],                # number of neurons per layer which should be tested
-        "n_layers": [2, 3, 5, 10, 15]                       # number of hidden layers which should be tested
+        "n_layers": [2, 3, 5, 10, 15],                      # number of hidden layers which should be tested
+        "n_processes": 4                                    # number of parallel processes used for parameter study
     }
+
+    # in order to prevent overheating better to use only half of the available physical cores
+    assert setup["n_processes"] <= cpu_count() / 4
 
     # load the sampled trajectories divided into training-, validation- and test data
     pt.Generator().manual_seed(0)  # ensure reproducibility
     divided_data = dataloader_wrapper(settings=setup)
 
-    # allocate tensor for storing the L1- and L2 loss of states, cl and cd for each neuron-layer combination
-    losses = pt.zeros((len(setup["n_neurons"]), len(setup["n_layers"]), 2, 3))
-
     # loop over neuron- and hidden layer-list
-    for neurons in range(len(setup["n_neurons"])):
-        for layers in range(len(setup["n_layers"])):
-            predictions, _, _ = run_parameter_study(setup, divided_data, n_neurons=setup["n_neurons"][neurons],
-                                                    n_layers=setup["n_layers"][layers], epochs=10000)
-
-            # calculate L2- and L1-loss for each neuron-layer combination based on predicted trajectories
-            losses[neurons, layers, :, :] = calculate_error_norm(predictions, divided_data["cl_test"],
-                                                                 divided_data["cd_test"], divided_data["states_test"])
-
-            print(f"finished calculation for network with {setup['n_neurons'][neurons]} neurons and"
-                  f" {setup['n_layers'][layers]} layers")
+    losses = manage_network_training(setup, divided_data)
 
     if not os.path.exists(setup["load_path"] + setup["model_dir"] + "/plots"):
         os.mkdir(setup["load_path"] + setup["model_dir"] + "/plots")
