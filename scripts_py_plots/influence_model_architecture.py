@@ -15,7 +15,7 @@
 import itertools
 import seaborn as sns
 from shutil import rmtree
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool
 
 from train_environment_model import *
 
@@ -57,20 +57,17 @@ def sort_losses_into_tensor(n_neurons: list, n_layers: list, loss_data: list) ->
     :param n_layers: list containing all the number of hidden layers calculated
     :param loss_data: list containing L2- and L1-loss wrt the network architecture as
                       [(neurons, layers), [[L2-losses], [L1-losses]]
-    :return: list containing L2- and L1-loss wrt the network architecture as
-             [(neurons, layers), [[L2-losses], [L1-losses]]
+    :return: tensor containing the L2- and L1-norm of the error, the data is stored as
+             [[L2-norm states, L2-norm cl, L2-norm cd], [L1-norm states, L1-norm cl, L1-norm cd]]
     """
-    # allocate tensor for storing the L1- and L2 loss of states, cl and cd for each neuron-layer combination
-    loss = pt.zeros((len(n_neurons), len(n_layers), 2, 3))
+    # sort data row-wise wrt number of neurons and layers
+    losses_sorted = sorted(loss_data)
 
-    # map the (neurons, layers)-combination back to the order as defined in the setup dict
-    # to do: find better way for sorting, because this is quite inefficient...
-    for neurons in range(len(n_neurons)):
-        for layers in range(len(n_layers)):
-            for entry in range(len(loss_data)):
-                if n_neurons[neurons] == loss_data[entry][0][0] and n_layers[layers] == loss_data[entry][0][1]:
-                    loss[neurons, layers, :, :] = loss_data[entry][1]
-    return loss
+    # take all the sorted loss data
+    loss = [losses_sorted[i][1] for i in range(len(losses_sorted))]
+
+    # and put them into a tensor
+    return pt.reshape(pt.stack(loss, dim=0), [len(n_neurons), len(n_layers), 2, 3])
 
 
 def manage_network_training(settings: dict, trajectory_data: dict) -> pt.Tensor:
@@ -81,6 +78,9 @@ def manage_network_training(settings: dict, trajectory_data: dict) -> pt.Tensor:
     :return: tensor containing the L2- and L1-norm of the error, the data is stored as
              [[L2-norm states, L2-norm cl, L2-norm cd], [L1-norm states, L1-norm cl, L1-norm cd]]
     """
+    if not os.path.exists(settings["load_path"] + settings["model_dir"]):
+        os.mkdir(settings["load_path"] + settings["model_dir"])
+
     # create list with all possible combinations of neurons and hidden layers
     networks = list(itertools.product(*[settings["n_neurons"], settings["n_layers"]]))
 
@@ -184,13 +184,11 @@ if __name__ == "__main__":
         "n_input_steps": 3,                                 # initial time steps as input -> n_input_steps > 1
         "len_trajectory": 200,                              # trajectory length for training the environment model
         "ratio": (0.65, 0.3, 0.05),                         # splitting ratio for train-, validation and test data
-        "n_neurons": [10, 25, 50, 100, 200],                # number of neurons per layer which should be tested
-        "n_layers": [2, 3, 5, 10, 15],                      # number of hidden layers which should be tested
-        "n_processes": 4                                    # number of parallel processes used for parameter study
+        "n_neurons": [25, 50, 75, 100],                     # number of neurons per layer which should be tested
+        "n_layers": [2, 3, 4, 5],                           # number of hidden layers which should be tested
+        "epochs": 10000,                                    # number of epochs to run for each model
+        "n_processes": 8                                    # number of parallel processes used for parameter study
     }
-
-    # in order to prevent overheating better to use only half of the available physical cores
-    assert setup["n_processes"] <= cpu_count() / 4
 
     # load the sampled trajectories divided into training-, validation- and test data
     pt.Generator().manual_seed(0)  # ensure reproducibility
