@@ -247,14 +247,13 @@ def plot_cl_cd_vs_prediction(settings: dict, test_data: dict, predicted_data: Un
             ax2[i].plot(range(settings["len_trajectory"]), predicted_data[number]["cl"].detach().numpy(),
                         color="red",
                         label="prediction")
+            ax2[i].set_ylabel("$lift$ $coefficient$ $\qquad c_l$", usetex=True, fontsize=13)
         else:
             ax2[i].plot(range(settings["len_trajectory"]), test_data["cd_test"][:, number], color="black")
             ax2[i].plot(range(settings["len_trajectory"]), predicted_data[number]["cd"].detach().numpy(),
                         color="red")
-    ax2[0].set_ylabel("$lift$ $coefficient$ $\qquad c_l$", usetex=True, fontsize=13)
-    ax2[0].set_xlabel("$epoch$ $number$", usetex=True, fontsize=13)
-    ax2[1].set_xlabel("$epoch$ $number$", usetex=True, fontsize=13)
-    ax2[1].set_ylabel("$drag$ $coefficient$ $\qquad c_d$", usetex=True, fontsize=13)
+            ax2[i].set_ylabel("$drag$ $coefficient$ $\qquad c_d$", usetex=True, fontsize=13)
+        ax2[i].set_xlabel("$epoch$ $number$", usetex=True, fontsize=13)
     fig2.suptitle("coefficients - real vs. prediction", usetex=True, fontsize=16)
     fig2.tight_layout()
     fig2.legend(loc="upper right", framealpha=1.0, fontsize=12, ncol=2)
