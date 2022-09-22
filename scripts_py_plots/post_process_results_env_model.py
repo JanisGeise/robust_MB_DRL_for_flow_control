@@ -15,6 +15,7 @@ import regex as re
 import numpy as np
 from typing import Union
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FormatStrFormatter
 
 
 def denormalize_data(x: pt.Tensor, x_min_max: list) -> pt.Tensor:
@@ -140,43 +141,49 @@ def plot_mean_std_error_of_test_data(settings: dict, mean_data: Union[list, pt.T
     if norm == "l2":
         norm = 0
         ylabel = "$L_2-norm$ $(relative$ $prediction$ $error)$"
+        name = "L2"
     else:
         norm = 1
         ylabel = "$L_1-norm$ $(relative$ $prediction$ $error)$"
+        name = "L1"
+
+    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(8, 6))
 
     if parameter == "epochs":
         x = range(settings["len_trajectory"])
         xlabel = "$epoch$ $number$"
         # plot mean and std. dev.
-        plt.plot(x, mean_data[norm, 0, :], color="red", label="$states$")
-        plt.plot(x, mean_data[norm, 1, :], color="blue", label="$c_l$")
-        plt.plot(x, mean_data[norm, 2, :], color="green", label="$c_d$")
-        plt.fill_between(x, mean_data[norm, 0, :] - std_dev[norm, 0, :], mean_data[norm, 0, :] + std_dev[norm, 0, :],
-                         color="red", alpha=0.3)
-        plt.fill_between(x, mean_data[norm, 1, :] - std_dev[norm, 1, :], mean_data[norm, 1, :] + std_dev[norm, 1, :],
-                         color="blue", alpha=0.3)
-        plt.fill_between(x, mean_data[norm, 2, :] - std_dev[norm, 2, :], mean_data[norm, 2, :] + std_dev[norm, 2, :],
-                         color="green", alpha=0.3)
+        ax.plot(x, mean_data[norm, 0, :], color="red", label="$probes$")
+        ax.plot(x, mean_data[norm, 1, :], color="blue", label="$c_l$")
+        ax.plot(x, mean_data[norm, 2, :], color="green", label="$c_d$")
+        ax.fill_between(x, mean_data[norm, 0, :] - std_dev[norm, 0, :], mean_data[norm, 0, :] + std_dev[norm, 0, :],
+                        color="red", alpha=0.3)
+        ax.fill_between(x, mean_data[norm, 1, :] - std_dev[norm, 1, :], mean_data[norm, 1, :] + std_dev[norm, 1, :],
+                        color="blue", alpha=0.3)
+        ax.fill_between(x, mean_data[norm, 2, :] - std_dev[norm, 2, :], mean_data[norm, 2, :] + std_dev[norm, 2, :],
+                        color="green", alpha=0.3)
 
     else:
         x = range(mean_data.size()[0])
         xlabel = "$episode$ $number$"
         # plot mean and std. dev.
-        plt.plot(x, mean_data[:, norm, 0], color="red", label="$states$")
-        plt.plot(x, mean_data[:, norm, 1], color="blue", label="$c_l$")
-        plt.plot(x, mean_data[:, norm, 2], color="green", label="$c_d$")
-        plt.fill_between(x, mean_data[:, norm, 0] - std_dev[:, norm, 0], mean_data[:, norm, 0] + std_dev[:, norm, 0],
-                         color="red", alpha=0.3)
-        plt.fill_between(x, mean_data[:, norm, 1] - std_dev[:, norm, 1], mean_data[:, norm, 1] + std_dev[:, norm, 1],
-                         color="blue", alpha=0.3)
-        plt.fill_between(x, mean_data[:, norm, 2] - std_dev[:, norm, 2], mean_data[:, norm, 2] + std_dev[:, norm, 2],
-                         color="green", alpha=0.3)
+        ax.plot(x, mean_data[:, norm, 0], color="red", label="$probes$")
+        ax.plot(x, mean_data[:, norm, 1], color="blue", label="$c_l$")
+        ax.plot(x, mean_data[:, norm, 2], color="green", label="$c_d$")
+        ax.fill_between(x, mean_data[:, norm, 0] - std_dev[:, norm, 0], mean_data[:, norm, 0] + std_dev[:, norm, 0],
+                        color="red", alpha=0.3)
+        ax.fill_between(x, mean_data[:, norm, 1] - std_dev[:, norm, 1], mean_data[:, norm, 1] + std_dev[:, norm, 1],
+                        color="blue", alpha=0.3)
+        ax.fill_between(x, mean_data[:, norm, 2] - std_dev[:, norm, 2], mean_data[:, norm, 2] + std_dev[:, norm, 2],
+                        color="green", alpha=0.3)
 
     plt.legend(loc="upper left", framealpha=1.0, fontsize=10, ncol=3)
-    plt.xlabel(xlabel, usetex=True, fontsize=12)
-    plt.ylabel(ylabel, usetex=True, fontsize=12)
+    ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+    ax.set_xlabel(xlabel, usetex=True, fontsize=12)
+    ax.set_ylabel(ylabel, usetex=True, fontsize=12)
+    fig.tight_layout()
     plt.savefig(settings["load_path"] + settings["model_dir"] +
-                f"/plots/total_prediction_error_L{norm + 1}norm_{parameter}.png", dpi=600)
+                f"/plots/total_prediction_error_{name}norm_{parameter}.png", dpi=600)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")

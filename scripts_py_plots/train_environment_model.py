@@ -31,6 +31,7 @@ import psutil
 import torch as pt
 import numpy as np
 from glob import glob
+from natsort import natsorted
 from typing import Tuple, Union
 
 from post_process_results_env_model import *
@@ -220,7 +221,7 @@ def load_trajectory_data(path: str, preserve_episodes: bool = False, len_traj: i
                This is the case if 'preserve_episodes = True'
     """
     # load the 'observations_*.pkl' files containing the trajectories sampled in the CFD environment
-    files = glob(path + "observations_*.pkl")
+    files = natsorted(glob(path + "observations_*.pkl"))
     observations = [pickle.load(open(file, "rb")) for file in files]
     actual_traj_length = len(observations[0][0]["actions"])
 

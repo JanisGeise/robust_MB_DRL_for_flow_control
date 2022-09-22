@@ -4,7 +4,8 @@
         - plots the results of the controlled case using the best policy in comparison to the uncontrolled case
 
     dependencies:
-        - None
+        - 'analyze_frequency_spectrum.py' for plotting the frequency spectrum of cl- and cd of PPO-training and the
+           final results
 
     prerequisites:
         - execution of the "test_training" function in 'run_training.py' in order to conduct a training
@@ -19,17 +20,21 @@ import matplotlib.pyplot as plt
 
 from glob import glob
 from typing import Union
+from natsort import natsorted
+
+from analyze_frequency_spectrum import analyze_frequencies_final_result, analyze_frequencies_ppo_training
 
 
 def load_trajectory_data(path: str) -> dict:
     """
-    :brief: load observations_*.pkl files containing all the data generated during training and sort them into a dict
+    load observations_*.pkl files containing all the data generated during training and sort them into a dict
+
     :param path: path to directory containing the files
     :return: dict with actions, states, cl, cd. Each parameter contains one tensor with the length of N_episodes, each
              entry has all the trajectories sampled in this episode (cols = N_trajectories, rows = length_trajectories)
     """
-    # for training an environment model it doesn't matter in which order files are read in -> no sorting required
-    files = glob(path + "observations_*.pkl")
+    # sort imported data wrt to episode number
+    files = natsorted(glob(path + "observations_*.pkl"))
     observations = [pickle.load(open(file, "rb")) for file in files]
     traj_length = len(observations[0][0]["actions"])
 
@@ -53,6 +58,7 @@ def load_trajectory_data(path: str) -> dict:
             rewards[:, worker] = observations[episode][worker]["rewards"]
             alpha[:, worker] = observations[episode][worker]["alpha"]
             beta[:, worker] = observations[episode][worker]["beta"]
+
         data["actions"][episode, :, :] = actions
         data["states"][episode, :, :] = states
         data["cl"][episode, :, :] = cl
@@ -158,10 +164,9 @@ def plot_results_vs_episode(settings: dict, cd_mean: Union[list, pt.Tensor], cd_
 
             ax[i].set_xlabel("$episode$ $number$", usetex=True, fontsize=13)
 
-    fig.suptitle(" ", usetex=True, fontsize=14)
     fig.tight_layout()
-    fig.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=2)
-    fig.subplots_adjust(wspace=0.25)
+    fig.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=n_cases)
+    fig.subplots_adjust(wspace=0.25, top=0.93)
     plt.savefig(settings["main_load_path"] + setup["path_controlled"] + "/plots/coefficients_vs_episode.png", dpi=600)
     plt.show(block=False)
     plt.pause(2)
@@ -189,7 +194,7 @@ def plot_rewards_vs_episode(settings: dict, reward_mean: Union[list, pt.Tensor],
 
     ax.set_ylabel("$mean$ $reward$", usetex=True, fontsize=12)
     ax.set_xlabel("$episode$ $number$", usetex=True, fontsize=12)
-    ax.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=2)
+    ax.legend(loc="lower right", framealpha=1.0, fontsize=10, ncol=2)
     plt.savefig(settings["main_load_path"] + setup["path_controlled"] + "/plots/rewards_vs_episode.png", dpi=600)
     plt.show(block=False)
     plt.pause(2)
@@ -244,7 +249,7 @@ def plot_cl_cd_alpha_beta(settings: dict, controlled_cases: Union[list, pt.Tenso
     fig.tight_layout(pad=1.5)
     fig.legend(loc="upper right", framealpha=1.0, fontsize=11, ncol=len(settings["case_name"]) + 1)
     fig.subplots_adjust(wspace=0.2)
-    plt.savefig(settings["main_load_path"] + f"/plots/{save_name}.png", dpi=600)
+    plt.savefig(settings["main_load_path"] + settings["path_controlled"] + f"/plots/{save_name}.png", dpi=600)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")
@@ -265,10 +270,10 @@ def plot_omega(settings: dict, controlled_cases: Union[list, pt.Tensor]) -> None
 
     ax.set_ylabel("$action$ $\omega$", usetex=True, fontsize=13)
     ax.set_xlabel("$time$ $[s]$", usetex=True, fontsize=13)
-    fig.suptitle("", usetex=True, fontsize=14)
     fig.tight_layout()
-    fig.legend(loc="upper right", framealpha=1.0, fontsize=11, ncol=len(settings["case_name"]))
-    plt.savefig(settings["main_load_path"] + f"/plots/omega_controlled_cases.png", dpi=600)
+    fig.subplots_adjust(top=0.93)
+    fig.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=len(settings["case_name"]))
+    plt.savefig(settings["main_load_path"] + settings["path_controlled"] + f"/plots/omega_controlled_case.png", dpi=600)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")
@@ -282,15 +287,15 @@ if __name__ == "__main__":
         "path_uncontrolled": r"run/cylinder2D_uncontrolled/cylinder2D_uncontrolled_Re100/",     # path to reference case
         "path_controlled": r"drlfoam/examples/",                    # main path to all the controlled cases
         "path_final_results": r"results_best_policy/",              # path to the results using the best policy
-        "case_name": ["test_training2/", "test_training3/"],        # dirs containing the training results
+        "case_name": ["test_training3/", "test_training4/"],   # dirs containing the training results
         "avg_over_cases": False,                                # if cases should be averaged over, e.g. different seeds
         "plot_final_res": True,                          # if the final policy already ran in openfoam, plot the results
         "color": ["blue", "red", "green", "darkviolet"],         # colors for the different cases, uncontrolled = black
-        "legend": ["test 2", "test 3"]                            # legend entries
+        "legend": ["test 3", "test 4"]                            # legend entries
     }
     # create directory for plots
-    if not os.path.exists(setup["main_load_path"] + "/plots"):
-        os.mkdir(setup["main_load_path"] + "/plots")
+    if not os.path.exists(setup["main_load_path"] + setup["path_controlled"] + "plots"):
+        os.mkdir(setup["main_load_path"] + setup["path_controlled"] + "plots")
 
     # load the results of the training
     loaded_data, controlled, traj = [], [], []
@@ -312,6 +317,9 @@ if __name__ == "__main__":
                                 actions_mean=averaged_data["mean_actions"], actions_std=averaged_data["std_actions"],
                                 n_cases=len(setup["case_name"]), plot_action=False)
 
+        for case in range(len(setup["case_name"])):
+            analyze_frequencies_ppo_training(setup, loaded_data[case], case=case+1)
+
     else:
         # TO_DO: average over different seed values per case
         pass
@@ -326,6 +334,7 @@ if __name__ == "__main__":
                                    usecols=[0, 1, 3], names=["t", "cd", "cl"])
 
         for case in range(len(setup["case_name"])):
+            # import the trajectories of the controlled cases
             controlled.append(pd.read_csv(setup["main_load_path"] + setup["path_controlled"] + setup["case_name"][case]
                                           + setup["path_final_results"] + r"postProcessing/forces/0/coefficient.dat",
                                           skiprows=13, header=0, sep=r"\s+", usecols=[0, 1, 2],
@@ -342,3 +351,6 @@ if __name__ == "__main__":
 
         # plot alpha and beta of the controlled cases
         plot_cl_cd_alpha_beta(setup, traj, plot_coeffs=False)
+
+        # analyze frequency spectrum of cl- and cd-trajectories
+        analyze_frequencies_final_result(setup, uncontrolled, controlled)

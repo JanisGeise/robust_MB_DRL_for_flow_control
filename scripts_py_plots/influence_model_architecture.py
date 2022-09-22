@@ -20,7 +20,7 @@ from multiprocessing import Pool
 from train_environment_model import *
 
 
-def parameter_study_wrapper(settings: dict, trajectories: dict, network_architecture: list, counter: int) -> list:
+def parameter_study_wrapper(settings: dict, trajectories: dict, network_architecture: tuple, counter: int) -> list:
     """
     :brief: executes training-, validation and testing of an environment model as well as the loss calculation
     :param settings: setup containing all the paths etc.
@@ -30,15 +30,14 @@ def parameter_study_wrapper(settings: dict, trajectories: dict, network_architec
     :return: list containing L2- and L1-loss wrt the network architecture as
              [(neurons, layers), [[L2-losses], [L1-losses]]
     """
-    neurons, layers = network_architecture[0], network_architecture[1]
-    print(f"process {counter}: starting calculation for network with {neurons} neurons and {layers} layers")
+    print(f"process {counter}: starting calculation for network with {network_architecture[0]} neurons and "
+          f"{network_architecture[1]} layers")
 
     # make temporary directory for each process
-    dir_name = f"/tmp_no_{counter}"
-    settings["model_dir"] += dir_name
+    settings["model_dir"] += f"/tmp_no_{counter}"
 
-    predictions, _, _ = run_parameter_study(settings, trajectories, n_neurons=neurons, n_layers=layers,
-                                            epochs=settings["epochs"])
+    predictions, _, _ = run_parameter_study(settings, trajectories, n_neurons=network_architecture[0],
+                                            n_layers=network_architecture[1], epochs=settings["epochs"])
 
     # calculate L2- and L1-loss for each neuron-layer combination based on predicted trajectories
     loss = calculate_error_norm(predictions, trajectories["cl_test"], trajectories["cd_test"],
@@ -47,7 +46,7 @@ def parameter_study_wrapper(settings: dict, trajectories: dict, network_architec
     # delete tmp directory and everything in it
     rmtree(settings["load_path"] + settings["model_dir"])
 
-    return [(neurons, layers), loss]
+    return [network_architecture, loss]
 
 
 def sort_losses_into_tensor(n_neurons: list, n_layers: list, loss_data: list) -> pt.Tensor:
@@ -180,6 +179,7 @@ if __name__ == "__main__":
     setup = {
         "load_path": r"/media/janis/Daten/Studienarbeit/drlfoam/examples/test_training3/",
         "model_dir": "Results_model/normalized_data/influenceModelArchitecture/EnvironmentModel_3timesteps",
+        "print_temp": True,                                 # print core temperatur of processor as info
         "normalize": True,                                  # True: input data will be normalized to interval of [1, 0]
         "n_input_steps": 3,                                 # initial time steps as input -> n_input_steps > 1
         "len_trajectory": 200,                              # trajectory length for training the environment model
