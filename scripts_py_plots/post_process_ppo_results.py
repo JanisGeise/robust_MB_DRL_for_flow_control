@@ -167,7 +167,8 @@ def plot_results_vs_episode(settings: dict, cd_mean: Union[list, pt.Tensor], cd_
     fig.tight_layout()
     fig.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=n_cases)
     fig.subplots_adjust(wspace=0.25, top=0.93)
-    plt.savefig(settings["main_load_path"] + setup["path_controlled"] + "/plots/coefficients_vs_episode.png", dpi=600)
+    plt.savefig("".join([settings["main_load_path"], setup["path_controlled"], "/plots/coefficients_vs_episode.png"]),
+                dpi=600)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")
@@ -195,7 +196,8 @@ def plot_rewards_vs_episode(settings: dict, reward_mean: Union[list, pt.Tensor],
     ax.set_ylabel("$mean$ $reward$", usetex=True, fontsize=12)
     ax.set_xlabel("$episode$ $number$", usetex=True, fontsize=12)
     ax.legend(loc="lower right", framealpha=1.0, fontsize=10, ncol=2)
-    plt.savefig(settings["main_load_path"] + setup["path_controlled"] + "/plots/rewards_vs_episode.png", dpi=600)
+    plt.savefig("".join([settings["main_load_path"], setup["path_controlled"], "/plots/rewards_vs_episode.png"]),
+                dpi=600)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")
@@ -249,7 +251,7 @@ def plot_cl_cd_alpha_beta(settings: dict, controlled_cases: Union[list, pt.Tenso
     fig.tight_layout(pad=1.5)
     fig.legend(loc="upper right", framealpha=1.0, fontsize=11, ncol=len(settings["case_name"]) + 1)
     fig.subplots_adjust(wspace=0.2)
-    plt.savefig(settings["main_load_path"] + settings["path_controlled"] + f"/plots/{save_name}.png", dpi=600)
+    plt.savefig("".join([settings["main_load_path"], settings["path_controlled"], f"/plots/{save_name}.png"]), dpi=600)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")
@@ -273,7 +275,8 @@ def plot_omega(settings: dict, controlled_cases: Union[list, pt.Tensor]) -> None
     fig.tight_layout()
     fig.subplots_adjust(top=0.93)
     fig.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=len(settings["case_name"]))
-    plt.savefig(settings["main_load_path"] + settings["path_controlled"] + f"/plots/omega_controlled_case.png", dpi=600)
+    plt.savefig("".join([settings["main_load_path"], settings["path_controlled"], f"/plots/omega_controlled_case.png"]),
+                dpi=600)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")

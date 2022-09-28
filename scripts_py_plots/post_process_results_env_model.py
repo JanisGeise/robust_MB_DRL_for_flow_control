@@ -84,7 +84,7 @@ def calculate_error_norm(pred_trajectories: Union[dict, list], cl_test: pt.Tenso
 
 def plot_train_validation_loss(path: str, mse_train: Union[list, pt.Tensor], mse_val: Union[list, pt.Tensor],
                                std_dev_train: Union[list, pt.Tensor] = None, std_dev_val: Union[list, pt.Tensor] = None,
-                               episode_wise: bool = False) -> None:
+                               episode_wise: bool = False, cd_model: bool = False) -> None:
     """
     plots the avg. train- and validation loss and the corresponding std. deviation, if only one training was conducted,
     then only the training- and validation loss is plotted without std. deviation
@@ -96,24 +96,32 @@ def plot_train_validation_loss(path: str, mse_train: Union[list, pt.Tensor], mse
     :param std_dev_val: list or tensor containing the (std. deviation) validation loss
     :param episode_wise: if the losses should be plotted wrt to the episode number (if = 'True'),
                          if = 'False': loss is plotted wrt epoch number
+    :param cd_model: flag if the losses are from the model predicting only cd (if specified in setup)
     :return: None
     """
-    plt.plot(range(len(mse_train)), mse_train, color="blue", label="training loss")
-    plt.plot(range(len(mse_val)), mse_val, color="red", label="validation loss")
+    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(8, 6))
+    ax.plot(range(len(mse_train)), mse_train, color="blue", label="training loss")
+    ax.plot(range(len(mse_val)), mse_val, color="red", label="validation loss")
     if std_dev_train is not None:
-        plt.fill_between(range(len(mse_val)), mse_val - std_dev_val, mse_val + std_dev_val, color="red", alpha=0.3)
-        plt.fill_between(range(len(mse_train)), mse_train - std_dev_train, mse_train + std_dev_train, color="blue",
-                         alpha=0.3)
+        ax.fill_between(range(len(mse_val)), mse_val - std_dev_val, mse_val + std_dev_val, color="red", alpha=0.3)
+        ax.fill_between(range(len(mse_train)), mse_train - std_dev_train, mse_train + std_dev_train, color="blue",
+                        alpha=0.3)
 
     if episode_wise:
-        plt.xlabel("$episode$ $number$", usetex=True, fontsize=13)
+        ax.set_xlabel("$episode$ $number$", usetex=True, fontsize=13)
         name = "/plots/train_val_loss_normalized_episodewise.png"
+        if cd_model:
+            name = "/plots/train_val_loss_normalized_episodewise_cdModel.png"
     else:
-        plt.xlabel("$epoch$ $number$", usetex=True, fontsize=13)
+        ax.set_xlabel("$epoch$ $number$", usetex=True, fontsize=13)
         name = "/plots/train_val_loss_normalized.png"
         plt.yscale("log")
-    plt.ylabel("$MSE$ $loss$", usetex=True, fontsize=13)
-    plt.legend()
+        if cd_model:
+            name = "/plots/train_val_loss_normalized_cdModel.png"
+    ax.set_ylabel("$MSE$ $loss$", usetex=True, fontsize=13)
+    fig.legend(loc="upper right", framealpha=1.0, fontsize=10)
+    fig.subplots_adjust(left=0.04)
+    fig.tight_layout()
     plt.savefig(path + name, dpi=600)
     plt.show(block=False)
     plt.pause(2)
@@ -178,12 +186,13 @@ def plot_mean_std_error_of_test_data(settings: dict, mean_data: Union[list, pt.T
                         color="green", alpha=0.3)
 
     plt.legend(loc="upper left", framealpha=1.0, fontsize=10, ncol=3)
-    ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+    ax.yaxis.set_major_formatter(FormatStrFormatter("%.3f"))
     ax.set_xlabel(xlabel, usetex=True, fontsize=12)
     ax.set_ylabel(ylabel, usetex=True, fontsize=12)
+    fig.subplots_adjust(left=0.04)
     fig.tight_layout()
-    plt.savefig(settings["load_path"] + settings["model_dir"] +
-                f"/plots/total_prediction_error_{name}norm_{parameter}.png", dpi=600)
+    plt.savefig("".join([settings["load_path"], settings["model_dir"],
+                         f"/plots/total_prediction_error_{name}norm_{parameter}.png"]), dpi=600)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")
@@ -226,8 +235,8 @@ def plot_trajectories_of_probes(settings: dict, states_test: dict, predicted_dat
         plt.savefig(settings["load_path"] + settings["model_dir"] + "/plots/real_trajectories_vs_prediction.png",
                     dpi=600)
     elif parameter == "episodes":
-        plt.savefig(settings["load_path"] + settings["model_dir"] +
-                    f"/plots/real_trajectories_vs_prediction_episode{episode_no}.png", dpi=600)
+        plt.savefig("".join([settings["load_path"], settings["model_dir"],
+                             f"/plots/real_trajectories_vs_prediction_episode{episode_no}.png"]), dpi=600)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")
@@ -266,10 +275,10 @@ def plot_cl_cd_vs_prediction(settings: dict, test_data: dict, predicted_data: Un
     fig2.legend(loc="upper right", framealpha=1.0, fontsize=12, ncol=2)
     fig2.subplots_adjust(wspace=0.25)
     if episode != 0:
-        plt.savefig(settings["load_path"] + settings["model_dir"] +
-                    f"/plots/real_cl_cd_vs_prediction_episode{episode}.png", dpi=600)
+        plt.savefig("".join([settings["load_path"], settings["model_dir"],
+                             f"/plots/real_cl_cd_vs_prediction_episode{episode}.png"]), dpi=600)
     else:
-        plt.savefig(settings["load_path"] + settings["model_dir"] + "/plots/real_cl_cd_vs_prediction.png",
+        plt.savefig("".join([settings["load_path"], settings["model_dir"], "/plots/real_cl_cd_vs_prediction.png"]),
                     dpi=600)
     plt.show(block=False)
     plt.pause(2)
@@ -296,7 +305,7 @@ def import_probe_locations(settings: dict) -> None:
     plt.xlabel("$x-position$", usetex=True)
     plt.ylabel("$y-position$", usetex=True)
     plt.legend()
-    plt.savefig(settings["load_path"] + settings["model_dir"] + "/plots/probe_positions.png", dpi=600)
+    plt.savefig("".join([settings["load_path"], settings["model_dir"], "/plots/probe_positions.png"]), dpi=600)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")
@@ -414,7 +423,7 @@ def post_process_results_episode_wise_model(settings: dict, predictions: list, c
 
     # compare real cl and cd values sampled in CFD environment with predicted ones along the trajectory for 4 different
     # episodes, also compare the states at the probe locations (pick 4 trajectories distributed over all episodes)
-    for episode in np.arange(5, stop=len(predictions)+1, step=int(len(predictions) / 4)):
+    for episode in np.arange(5, stop=len(predictions) + 1, step=int(len(predictions) / 4)):
         trajectory_no = pt.randint(low=0, high=cfd_data["actions"].size()[2], size=[1, 1]).item()
 
         # plot cl and cd of CFD environment vs. model prediction

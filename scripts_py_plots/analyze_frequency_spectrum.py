@@ -60,9 +60,9 @@ def analyze_frequencies_ppo_training(settings: dict, data: dict, sampling_freq: 
 
     ax[1][0].set_xlabel("$episode$ $number$", usetex=True, fontsize=13, labelpad=10)
     ax[1][1].set_xlabel("$episode$ $number$", usetex=True, fontsize=13, labelpad=10)
-    ax[0][0].set_ylabel("$frequency$ $\qquad\left[\\frac{1}{100~epochs} \\right]$", usetex=True, fontsize=13,
+    ax[0][0].set_ylabel("$f(c_d)$ $\qquad\left[\\frac{1}{100~epochs} \\right]$", usetex=True, fontsize=13,
                         labelpad=15)
-    ax[1][0].set_ylabel("$frequency$ $\qquad\left[\\frac{1}{100~epochs} \\right]$", usetex=True, fontsize=13,
+    ax[1][0].set_ylabel("$f(c_l)$ $\qquad\left[\\frac{1}{100~epochs} \\right]$", usetex=True, fontsize=13,
                         labelpad=15)
     ax[0][0].set_ylim(0, 25)
     ax[1][0].set_ylim(0, 25)
@@ -73,8 +73,8 @@ def analyze_frequencies_ppo_training(settings: dict, data: dict, sampling_freq: 
     cb1.set_label("$PSD$ $\qquad[10^{-3}]$", usetex=True, labelpad=20, fontsize=13)
     cb2.set_label("$PSD$ $\qquad[-]$", usetex=True, labelpad=20, fontsize=13)
     fig.tight_layout()
-    plt.savefig(settings["main_load_path"] + settings["path_controlled"] + f"/plots/freq_vs_episodes_case{case}.png",
-                dpi=600)
+    plt.savefig("".join([settings["main_load_path"], settings["path_controlled"],
+                         f"/plots/freq_vs_episodes_case{case}.png"]), dpi=600)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")
@@ -136,7 +136,8 @@ def analyze_frequencies_final_result(settings: dict, uncontrolled_case: Union[di
     fig.tight_layout()
     fig.subplots_adjust(wspace=0.25, top=0.93)
     fig.legend(ncol=len(f_cd), loc="upper right", framealpha=1.0, fontsize=10)
-    plt.savefig(settings["main_load_path"] + settings["path_controlled"] + f"/plots/freq_final_result.png", dpi=600)
+    plt.savefig("".join([settings["main_load_path"], settings["path_controlled"], f"/plots/freq_final_result.png"]),
+                dpi=600)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")
