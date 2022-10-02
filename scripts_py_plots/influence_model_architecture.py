@@ -22,7 +22,8 @@ from train_environment_model import *
 
 def parameter_study_wrapper(settings: dict, trajectories: dict, network_architecture: tuple, counter: int) -> list:
     """
-    :brief: executes training-, validation and testing of an environment model as well as the loss calculation
+    executes training-, validation and testing of an environment model as well as the loss calculation
+
     :param settings: setup containing all the paths etc.
     :param trajectories: sampled trajectories in the CFD environment split into training-, validation and test data
     :param network_architecture: tuple containing the number of neurons and hidden layers as (neurons, layers)
@@ -36,8 +37,8 @@ def parameter_study_wrapper(settings: dict, trajectories: dict, network_architec
     # make temporary directory for each process
     settings["model_dir"] += f"/tmp_no_{counter}"
 
-    predictions, _, _ = run_parameter_study(settings, trajectories, n_neurons=network_architecture[0],
-                                            n_layers=network_architecture[1], epochs=settings["epochs"])
+    predictions, _, _ = train_test_env_model(settings, trajectories, n_neurons=network_architecture[0],
+                                             n_layers=network_architecture[1], epochs=settings["epochs"])
 
     # calculate L2- and L1-loss for each neuron-layer combination based on predicted trajectories
     loss = calculate_error_norm(predictions, trajectories["cl_test"], trajectories["cd_test"],
@@ -51,7 +52,8 @@ def parameter_study_wrapper(settings: dict, trajectories: dict, network_architec
 
 def sort_losses_into_tensor(n_neurons: list, n_layers: list, loss_data: list) -> pt.Tensor:
     """
-    :brief: sorts the list containing the losses wrt to network architecture into single tensor
+    sorts the list containing the losses wrt to network architecture into single tensor
+
     :param n_neurons: list containing all the number of neurons calculated
     :param n_layers: list containing all the number of hidden layers calculated
     :param loss_data: list containing L2- and L1-loss wrt the network architecture as
@@ -71,7 +73,8 @@ def sort_losses_into_tensor(n_neurons: list, n_layers: list, loss_data: list) ->
 
 def manage_network_training(settings: dict, trajectory_data: dict) -> pt.Tensor:
     """
-    :brief: manages the execution of the parameter study with multiple processes
+    manages the execution of the parameter study with multiple processes
+
     :param settings: setup containing all the path etc.
     :param trajectory_data: sampled trajectories in the CFD environment split into training-, validation and test data
     :return: tensor containing the L2- and L1-norm of the error, the data is stored as
@@ -88,7 +91,7 @@ def manage_network_training(settings: dict, trajectory_data: dict) -> pt.Tensor:
 
     with Pool(min(settings["n_processes"], len(networks))) as proc:
         results = proc.starmap(parameter_study_wrapper, args)
-
+    exit()
     # sort losses into tensor based on n_neurons and n_layers
     error = sort_losses_into_tensor(settings["n_neurons"], settings["n_layers"], results)
 
@@ -98,8 +101,8 @@ def manage_network_training(settings: dict, trajectory_data: dict) -> pt.Tensor:
 def calculate_error_norm(pred_trajectories: list, cl_test: pt.Tensor, cd_test: pt.Tensor,
                          states_test: pt.Tensor) -> pt.Tensor:
     """
-    :brief: calculates the L2- and L1-norm of the error between the real and the predicted trajectories within the test
-            data set
+    calculates the L2- and L1-norm of the error between the real and the predicted trajectories within the test data set
+
     :param pred_trajectories: predicted trajectories by the environment model
     :param cl_test: cl coefficients of the test data set sampled in the CFD environment
     :param cd_test: cd coefficients of the test data set sampled in the CFD environment
@@ -125,10 +128,10 @@ def calculate_error_norm(pred_trajectories: list, cl_test: pt.Tensor, cd_test: p
 
 def plot_losses(settings: dict, loss_data: pt.Tensor, parameter: str = "cd") -> None:
     """
-    :brief: creates heatmaps of the L2- and L1-losses wrt n_neurons and n_layers
-            note:
-                - seaborn plots row-wise (in x-direction) starting in the top-left corner
-                    -> x-data is n_layers, y-data is n_neurons
+    creates heatmaps of the L2- and L1-losses wrt n_neurons and n_layers, note:
+            - seaborn plots row-wise (in x-direction) starting in the top-left corner
+            -> x-data is n_layers, y-data is n_neurons
+
     :param settings: setup defining paths etc.
     :param loss_data: the tensor containing the calculated L2- and L1-losses for each neuron-layer combination
     :param parameter: which losses (CFD vs. prediction by the environment model) of which parameter should be plotted:
@@ -178,16 +181,18 @@ if __name__ == "__main__":
     # Setup
     setup = {
         "load_path": r"/media/janis/Daten/Studienarbeit/drlfoam/examples/test_training3/",
-        "model_dir": "Results_model/normalized_data/influenceModelArchitecture/EnvironmentModel_3timesteps",
+        "model_dir": "Results_model/TEST",
+        "episode_depending_model": False,       # either one model for whole data set or new model for each episode
         "print_temp": True,                                 # print core temperatur of processor as info
         "normalize": True,                                  # True: input data will be normalized to interval of [1, 0]
+        "smooth_cd": False,                 # flag if cd-Trajectories should be filtered after loading (low-pass filter)
         "n_input_steps": 3,                                 # initial time steps as input -> n_input_steps > 1
         "len_trajectory": 200,                              # trajectory length for training the environment model
         "ratio": (0.65, 0.3, 0.05),                         # splitting ratio for train-, validation and test data
         "n_neurons": [25, 50, 75, 100],                     # number of neurons per layer which should be tested
         "n_layers": [2, 3, 4, 5],                           # number of hidden layers which should be tested
         "epochs": 10000,                                    # number of epochs to run for each model
-        "n_processes": 8                                    # number of parallel processes used for parameter study
+        "n_processes": 4                                    # number of parallel processes used for parameter study
     }
 
     # load the sampled trajectories divided into training-, validation- and test data
@@ -197,8 +202,8 @@ if __name__ == "__main__":
     # loop over neuron- and hidden layer-list
     losses = manage_network_training(setup, divided_data)
 
-    if not os.path.exists(setup["load_path"] + setup["model_dir"] + "/plots"):
-        os.mkdir(setup["load_path"] + setup["model_dir"] + "/plots")
+    if not os.path.exists("".join([setup["load_path"], setup["model_dir"], "/plots"])):
+        os.mkdir("".join([setup["load_path"], setup["model_dir"], "/plots"]))
 
     # plot L2 and L1 losses wrt n_neurons and n_layers as heatmap
     plot_losses(setup, losses, parameter="states")

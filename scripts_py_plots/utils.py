@@ -17,9 +17,11 @@ import torch as pt
 from glob import glob
 from typing import Tuple
 from natsort import natsorted
+from scipy.signal import butter, lfilter, lfilter_zi
 
 
-def load_trajectory_data(path: str, preserve_episodes: bool = False, len_traj: int = 400) -> dict:
+def load_trajectory_data(path: str, preserve_episodes: bool = False, len_traj: int = 400,
+                         smooth_cd: bool = False) -> dict:
     """
     load observations_*.pkl files containing all the data generated during training and sort them into a dict
 
@@ -27,6 +29,7 @@ def load_trajectory_data(path: str, preserve_episodes: bool = False, len_traj: i
     :param preserve_episodes: either 'True' if the data should be sorted wrt the episodes, or 'False' if the order of
                               the episodes doesn't matter (in case only one model is trained for all the data)
     :param len_traj: length of the trajectories defined in the setup, the loaded trajectories are split wrt this length
+    :param smooth_cd: flag if the trajectories for cd should be filtered (low-pass filter)
     :return: actions, states, cl, cd as tensors within a dict where every column is a trajectory, also return number of
              workers used for sampling the trajectories. The structure is either:
              - all trajectories of each parameter in one tensor, independent of the episode. The resulting length
@@ -70,6 +73,10 @@ def load_trajectory_data(path: str, preserve_episodes: bool = False, len_traj: i
             data["cl"][episode, :, :] = pt.concat(pt.split(cl, len_traj), dim=1)
             data["cd"][episode, :, :] = pt.concat(pt.split(cd, len_traj), dim=1)
 
+            # if specified apply low pass filter to cd-trajectories
+            if smooth_cd:
+                data["cd"][episode, :, :] = smooth_cd_trajectories(data["cd"][episode, :, :])
+
     # if only one model is trained using all available data, the order of the episodes doesn't matter
     else:
         shape = (actual_traj_length, len(observations) * len(observations[0]))
@@ -89,6 +96,10 @@ def load_trajectory_data(path: str, preserve_episodes: bool = False, len_traj: i
         data["cl"] = pt.concat(pt.split(cl, len_traj), dim=1)
         data["cd"] = pt.concat(pt.split(cd, len_traj), dim=1)
         data["states"] = pt.concat(pt.split(states, len_traj), dim=2)
+
+        # if specified apply low pass filter to cd-trajectories
+        if smooth_cd:
+            data["cd"] = smooth_cd_trajectories(data["cd"])
 
     return data
 
@@ -166,7 +177,7 @@ def dataloader_wrapper(settings: dict) -> dict:
     :return: dict containing all the trajectory data required for train, validate and testing the environment model
     """
     all_data = load_trajectory_data(settings["load_path"], settings["episode_depending_model"],
-                                    settings["len_trajectory"])
+                                    settings["len_trajectory"], settings["smooth_cd"])
 
     if not settings["episode_depending_model"]:
         print(f"data contains {all_data['actions'].size()[-1]} trajectories with length of"
@@ -192,6 +203,29 @@ def dataloader_wrapper(settings: dict) -> dict:
     all_data["network_data"] = pickle.load(open(settings["load_path"] + "training_history.pkl", "rb"))
 
     return all_data
+
+
+def smooth_cd_trajectories(data: pt.Tensor, cutoff_freq: int = 15, sample_freq: int = 100, order: int = 1) -> pt.Tensor:
+    """
+    filter the trajectories for cd using a low-pass filter
+
+    :param data: trajectories which should be filtered
+    :param cutoff_freq: upper bound for frequencies, everything greater than that will be filtered out
+    :param sample_freq: frequency which was used to generate the data
+    :param order: order of the filter
+    :return: the filtered trajectories for cd
+    """
+    data_smooth = pt.zeros(data.size())
+
+    # create filter
+    a = butter(N=order, Wn=cutoff_freq, fs=sample_freq, btype="low", analog=False)
+    zi = lfilter_zi(a[0], a[1])
+
+    # loop over all trajectories and filter each one
+    for traj in range(data.size()[1]):
+        data_smooth[:, traj] = pt.tensor(lfilter(a[0], a[1], data[:, traj], zi=data[0, traj].item()*zi)[0])
+
+    return data_smooth
 
 
 if __name__ == "__main__":
