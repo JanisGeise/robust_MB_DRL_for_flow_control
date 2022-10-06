@@ -81,7 +81,8 @@ def analyze_frequencies_ppo_training(settings: dict, data: dict, sampling_freq: 
 
 
 def analyze_frequencies_final_result(settings: dict, uncontrolled_case: Union[dict, pd.DataFrame],
-                                     controlled_case: list[Union[dict, pd.DataFrame]]) -> None:
+                                     controlled_case: list[Union[dict, pd.DataFrame]],
+                                     t_start: Union[int, float] = 5) -> None:
     """
     analyzes the frequency spectrum of the trajectories for cd and cl of the final results (cases with active flow
     control using the final policies)
@@ -89,24 +90,29 @@ def analyze_frequencies_final_result(settings: dict, uncontrolled_case: Union[di
     :param settings: setup containing all the paths etc.
     :param uncontrolled_case: reference case containing results from uncontrolled flow past cylinder
     :param controlled_case: results from the loaded cases with active flow control using the final policies
+    :param t_start: starting time for analysis in [s], should be greater than 4 sec in order to not use transient phase
     :return: None
     """
     # do frequency analysis for the trajectories of cl and cd for each loaded case
     f_cd, f_cl, a_cd, a_cl = [], [], [], []
     for case in range(len(settings["case_name"]) + 1):
         if case == 0:
+            # get starting index where t >= t_start
+            idx_start = uncontrolled_case["t"][uncontrolled_case["t"] == t_start].index[0]
             sampling_freq = 1 / (uncontrolled_case["t"][1] - uncontrolled_case["t"][0])
-            len_traj = len(uncontrolled_case["t"])
-            f_cd_tmp, a_cd_tmp = welch(uncontrolled_case["cd"] - uncontrolled_case["cd"].mean(), fs=sampling_freq,
-                                       nperseg=int(len_traj * 0.5), nfft=len_traj)
-            f_cl_tmp, a_cl_tmp = welch(uncontrolled_case["cl"] - uncontrolled_case["cl"].mean(), fs=sampling_freq,
-                                       nperseg=int(len_traj * 0.5), nfft=len_traj)
-        else:
-            sampling_freq = 1 / (controlled_case[case - 1]["t"][1] - controlled_case[case - 1]["t"][0])
-            len_traj = len(controlled_case[case - 1]["t"])
-            f_cd_tmp, a_cd_tmp = welch(controlled_case[case - 1]["cd"] - controlled_case[case - 1]["cd"].mean(),
+            len_traj = len(uncontrolled_case["t"][idx_start:])
+            f_cd_tmp, a_cd_tmp = welch(uncontrolled_case["cd"][idx_start:] - uncontrolled_case["cd"][idx_start:].mean(),
                                        fs=sampling_freq, nperseg=int(len_traj * 0.5), nfft=len_traj)
-            f_cl_tmp, a_cl_tmp = welch(controlled_case[case - 1]["cl"] - controlled_case[case - 1]["cl"].mean(),
+            f_cl_tmp, a_cl_tmp = welch(uncontrolled_case["cl"][idx_start:] - uncontrolled_case["cl"][idx_start:].mean(),
+                                       fs=sampling_freq, nperseg=int(len_traj * 0.5), nfft=len_traj)
+        else:
+            # get starting index where t >= t_start
+            idx_start = uncontrolled_case["t"][uncontrolled_case["t"] == t_start].index[0]
+            sampling_freq = 1 / (controlled_case[case - 1]["t"][1] - controlled_case[case - 1]["t"][0])
+            len_traj = len(controlled_case[case - 1]["t"][idx_start:])
+            f_cd_tmp, a_cd_tmp = welch(controlled_case[case - 1]["cd"][idx_start:] - controlled_case[case - 1]["cd"][idx_start:].mean(),
+                                       fs=sampling_freq, nperseg=int(len_traj * 0.5), nfft=len_traj)
+            f_cl_tmp, a_cl_tmp = welch(controlled_case[case - 1]["cl"][idx_start:] - controlled_case[case - 1]["cl"][idx_start:].mean(),
                                        fs=sampling_freq, nperseg=int(len_traj * 0.5), nfft=len_traj)
         f_cd.append(f_cd_tmp)
         f_cl.append(f_cl_tmp)

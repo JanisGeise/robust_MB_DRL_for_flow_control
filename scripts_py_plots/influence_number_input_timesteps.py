@@ -17,7 +17,9 @@ from post_process_results_env_model import calculate_error_norm
 
 def parameter_study_wrapper(settings: dict, trajectories: dict, n_time_steps: int, counter: int) -> pt.Tensor:
     """
-    :brief: executes training-, validation and testing of an environment model as well as the loss calculation
+    executes training-, validation and testing of an environment model(s) as well as the calculation of the prediction
+    error
+
     :param settings: setup containing all the paths etc.
     :param trajectories: sampled trajectories in the CFD environment split into training-, validation and test data
     :param n_time_steps: number of time steps used as input
@@ -28,27 +30,35 @@ def parameter_study_wrapper(settings: dict, trajectories: dict, n_time_steps: in
     print(f"parameter {counter}: starting calculation for network with {n_time_steps} time steps as input")
     settings["n_input_steps"] = n_time_steps
 
-    if setup["two_env_models"]:
-        if setup["episode_depending_model"]:
+    if setup["episode_depending_model"]:
+        if setup["two_env_models"]:
             predictions, _, _ = env_model_episode_wise_2models(settings, trajectories, n_neurons=settings["n_neurons"],
                                                                n_layers=settings["n_layers"], epochs=settings["epochs"])
 
         else:
-            predictions, _, _ = env_model_2models(settings, trajectories, n_neurons=settings["n_neurons"],
-                                                  n_layers=settings["n_layers"], epochs=settings["epochs"])
+            predictions, _, _ = train_test_env_model_episode_wise(settings, trajectories,
+                                                                  n_neurons=settings["n_neurons"],
+                                                                  n_layers=settings["n_layers"],
+                                                                  epochs=settings["epochs"])
+
+        # calculate L2- and L1-loss for the last episode, because previous two episodes are just used as training data
+        loss = calculate_error_norm(predictions[0], trajectories["cl"][2, :, :], trajectories["cd"][2, :, :],
+                                    trajectories["states"][2, :, :, :])
 
     else:
-        if setup["episode_depending_model"]:
-            predictions, _, _ = train_test_env_model_episode_wise(settings, trajectories, n_neurons=settings["n_neurons"],
-                                                                  n_layers=settings["n_layers"], epochs=settings["epochs"])
+        if setup["two_env_models"]:
+            predictions, _, _ = env_model_2models(settings, trajectories, n_neurons=settings["n_neurons"],
+                                                  n_layers=settings["n_layers"], epochs=settings["epochs"])
 
         else:
             predictions, _, _ = train_test_env_model(settings, trajectories, n_neurons=settings["n_neurons"],
                                                      n_layers=settings["n_layers"], epochs=settings["epochs"])
 
-    # calculate L2- and L1-loss for the current N input time steps based on predicted trajectories
-    loss = calculate_error_norm(predictions, trajectories["cl_test"], trajectories["cd_test"],
-                                trajectories["states_test"])
+        # calculate L2- and L1-loss for the current N input time steps based on predicted trajectories
+        loss = calculate_error_norm(predictions, trajectories["cl_test"], trajectories["cd_test"],
+                                    trajectories["states_test"])
+
+    return loss
 
     return loss
 
