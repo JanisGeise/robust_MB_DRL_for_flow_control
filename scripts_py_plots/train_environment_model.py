@@ -23,6 +23,9 @@
             - the first model is trained in order to predict the trajectories for cd
             - the second model is trained in order to predict the trajectories of the probes and cl
 
+        - if setup["predict_ds"] = True: use change of state for prediction instead of predicting the next state, this
+          method is available for all others options
+
     dependencies:
         - 'utils.py'
         - 'post_process_results_env_model.py' if the results should be post-processed and plotted
@@ -77,7 +80,8 @@ class FCModel(pt.nn.Module):
 
 def create_label_feature_pairs(t_idx: int, idx_trajectory: Union[pt.Tensor, int], n_time_steps, trajectory: pt.Tensor,
                                cl: pt.Tensor, cd: pt.Tensor, action: pt.Tensor, cd_model: bool = False,
-                               two_models: bool = False) -> Tuple[pt.Tensor, pt.Tensor]:
+                               two_models: bool = False, use_ds: bool = False,
+                               min_max_ds: list = None) -> Tuple[pt.Tensor, pt.Tensor]:
     """
     creates feature-label pairs for in- / output of environment model
 
@@ -90,6 +94,8 @@ def create_label_feature_pairs(t_idx: int, idx_trajectory: Union[pt.Tensor, int]
     :param action: actions taken in the input states
     :param cd_model: flag if this model is for predicting cd only
     :param two_models: flag if one environment or two environment models are used in order to predict cd, cl, probes
+    :param use_ds: use change of state for prediction instead of predicting the next state
+    :param min_max_ds: min- and max of ds used for scaling
     :return: one tensor containing all the features containing all states, actions, cl- and cd-values for n_time_steps;
              one tensor containing the corresponding labels. The labels state the environment at the state
              (t_idx + n_time_steps + 1) while the features contain all states, action
@@ -103,17 +109,42 @@ def create_label_feature_pairs(t_idx: int, idx_trajectory: Union[pt.Tensor, int]
 
     # labels contain next step to predict by the model, if only one model is used then label = cd, cl, probes
     if not two_models:
-        label = pt.concat([trajectory[t_idx + n_time_steps, :].squeeze(), cl[t_idx + n_time_steps, idx_trajectory],
-                           cd[t_idx + n_time_steps, idx_trajectory]], dim=0)
+        if use_ds:
+            # predict change of state instead of the next state: ds = s(t+1) - s(t)
+            d_cl = cl[t_idx + n_time_steps - 1, idx_trajectory] - cl[t_idx + n_time_steps, idx_trajectory]
+            d_cd = cd[t_idx + n_time_steps - 1, idx_trajectory] - cd[t_idx + n_time_steps, idx_trajectory]
+            d_states = trajectory[t_idx + n_time_steps - 1, :] - trajectory[t_idx + n_time_steps, :]
+
+            # scale ds to interval [-1, 1]
+            d_cl = 2.0 * ((d_cl - min_max_ds[0]) / (min_max_ds[1] - min_max_ds[0])) - 1.0
+            d_cd = 2.0 * ((d_cd - min_max_ds[0]) / (min_max_ds[1] - min_max_ds[0])) - 1.0
+            d_states = 2.0 * ((d_states - min_max_ds[0]) / (min_max_ds[1] - min_max_ds[0])) - 1.0
+            label = pt.concat([d_states.squeeze(), d_cl, d_cd], dim=0)
+        else:
+            label = pt.concat([trajectory[t_idx + n_time_steps, :].squeeze(), cl[t_idx + n_time_steps, idx_trajectory],
+                               cd[t_idx + n_time_steps, idx_trajectory]], dim=0)
 
     # else: label is either only cd, or cl and probes depending on which model
     else:
         if cd_model:
-            label = cd[t_idx + n_time_steps, idx_trajectory]
+            if use_ds:
+                # predict change of state instead of the next state: ds = s(t+1) - s(t)
+                d_cd = cd[t_idx + n_time_steps - 1, idx_trajectory] - cd[t_idx + n_time_steps, idx_trajectory]
+                label = 2.0 * ((d_cd - min_max_ds[0]) / (min_max_ds[1] - min_max_ds[0])) - 1.0
+            else:
+                label = cd[t_idx + n_time_steps, idx_trajectory]
 
         else:
-            label = pt.concat([trajectory[t_idx + n_time_steps, :].squeeze(), cl[t_idx + n_time_steps, idx_trajectory]],
-                              dim=0)
+            if use_ds:
+                # predict change of state instead of the next state: ds = s(t+1) - s(t)
+                d_states = trajectory[t_idx + n_time_steps - 1, :] - trajectory[t_idx + n_time_steps, :]
+                d_states = 2.0 * ((d_states - min_max_ds[0]) / (min_max_ds[1] - min_max_ds[0])) - 1.0
+                d_cl = cl[t_idx + n_time_steps - 1, idx_trajectory] - cl[t_idx + n_time_steps, idx_trajectory]
+                d_cl = 2.0 * ((d_cl - min_max_ds[0]) / (min_max_ds[1] - min_max_ds[0])) - 1.0
+                label = pt.concat([d_states.squeeze(), d_cl], dim=0)
+            else:
+                label = pt.concat([trajectory[t_idx + n_time_steps, :].squeeze(),
+                                   cl[t_idx + n_time_steps, idx_trajectory]], dim=0)
 
     return pt.flatten(feature), pt.flatten(label)
 
@@ -122,7 +153,8 @@ def train_model(model: pt.nn.Module, state_train: pt.Tensor, action_train: pt.Te
                 action_val: pt.Tensor, cl_train: pt.Tensor, cd_train: pt.Tensor, cl_val: pt.Tensor, cd_val: pt.Tensor,
                 epochs: int = 10000, lr: float = 0.0005, batch_size: int = 50, n_time_steps: int = 3,
                 save_model: bool = True, save_name: str = "best", save_dir: str = "EnvModel",
-                info: bool = False, cd_model: bool = False, two_models: bool = False) -> Tuple[list, list]:
+                info: bool = False, cd_model: bool = False, two_models: bool = False,
+                use_ds: bool = False, min_max_ds: list = None) -> Tuple[list, list]:
     """
     train environment model based on sampled trajectories
 
@@ -145,6 +177,8 @@ def train_model(model: pt.nn.Module, state_train: pt.Tensor, action_train: pt.Te
     :param info: print core temperature of processor every 250 epochs
     :param cd_model: flag if this model is for predicting cd only
     :param two_models: flag if one environment or two environment models are used in order to predict cd, cl, probes
+    :param use_ds: use change of state for prediction instead of predicting the next state
+    :param min_max_ds: min- and max of ds used for scaling
     :return: training and validation loss as list
     """
 
@@ -175,7 +209,8 @@ def train_model(model: pt.nn.Module, state_train: pt.Tensor, action_train: pt.Te
 
             # create pairs with feature and corresponding label
             feature, label = create_label_feature_pairs(t_start_idx[b].item(), idx_train, n_time_steps, traj_train,
-                                                        cl_train, cd_train, action_train, cd_model, two_models)
+                                                        cl_train, cd_train, action_train, cd_model, two_models, use_ds,
+                                                        min_max_ds)
 
             # get prediction and loss based on n time steps for next state
             prediction = model(feature).squeeze()
@@ -190,7 +225,8 @@ def train_model(model: pt.nn.Module, state_train: pt.Tensor, action_train: pt.Te
         with pt.no_grad():
             for b in range(batch_size):
                 feature, label = create_label_feature_pairs(t_start_idx[b].item(), idx_val, n_time_steps, traj_val,
-                                                            cl_val, cd_val, action_val, cd_model, two_models)
+                                                            cl_val, cd_val, action_val, cd_model, two_models, use_ds,
+                                                            min_max_ds)
                 prediction = model(feature).squeeze()
                 loss_val = criterion(prediction, label)
                 batch_loss[b] = loss_val.item()
@@ -219,7 +255,8 @@ def train_model(model: pt.nn.Module, state_train: pt.Tensor, action_train: pt.Te
     return training_loss, validation_loss
 
 
-def predict_trajectories(model: pt.nn.Module, input_traj: pt.Tensor, actions: pt.Tensor, n_probes: int) -> dict:
+def predict_trajectories(model: pt.nn.Module, input_traj: pt.Tensor, actions: pt.Tensor, n_probes: int,
+                         use_ds: bool = False, min_max_ds: list = None) -> dict:
     """
     using the environment model in order to predict the trajectory based on a given initial state and actions
 
@@ -227,6 +264,8 @@ def predict_trajectories(model: pt.nn.Module, input_traj: pt.Tensor, actions: pt
     :param input_traj: input states, cl, cd and actions for the first N time steps
     :param actions: actions taken in the CFD environment along the whole trajectory
     :param n_probes: number of probes used in the simulation
+    :param use_ds: use change of state for prediction instead of predicting the next state
+    :param min_max_ds: min- and max of ds used for scaling
     :return: dictionary with the trajectories containing the states at the probe locations, cl, cd
     """
     # allocate tensor for predicted states, cl and cd for the whole trajectory and fill in the first N input states
@@ -239,7 +278,12 @@ def predict_trajectories(model: pt.nn.Module, input_traj: pt.Tensor, actions: pt
         feature = pt.flatten(pt.concat([trajectory[t:t + input_traj.size()[0], :],
                                         (actions[t:t + input_traj.size()[0]]).reshape([input_traj.size()[0], 1])],
                                        dim=1))
-        trajectory[t + input_traj.size()[0], :] = model(feature).squeeze()
+        if use_ds:
+            # s(t+1) = ds + s(t) -> since it's used as new input state: re-scale (NN-output scales to [-1, 1])
+            ds = ((model(feature).squeeze() + 1.0) * 0.5) * (min_max_ds[1] - min_max_ds[1]) + min_max_ds[1]
+            trajectory[t + input_traj.size()[0], :] = ds + trajectory[t + input_traj.size()[0] - 1, :]
+        else:
+            trajectory[t + input_traj.size()[0], :] = model(feature).squeeze()
 
     # resort: divide output data into states, cl and cd
     output = {"states": trajectory[:, :n_probes], "cl": trajectory[:, -2], "cd": trajectory[:, -1]}
@@ -273,7 +317,8 @@ def train_test_env_model(settings: dict, trajectory_data: dict, n_neurons: int =
                                      trajectory_data["cd_train"], trajectory_data["cl_val"],
                                      trajectory_data["cd_val"], n_time_steps=settings["n_input_steps"],
                                      save_dir=settings["load_path"] + settings["model_dir"], save_name="bestModel",
-                                     epochs=epochs, batch_size=batch_size, info=settings["print_temp"])
+                                     epochs=epochs, batch_size=batch_size, info=settings["print_temp"],
+                                     use_ds=settings["predict_ds"], min_max_ds=trajectory_data["min_max_ds"])
 
     # test model: loop over all test data and predict the trajectories based on given initial state and actions
     environment_model.load_state_dict(pt.load("".join([settings["load_path"], settings["model_dir"],
@@ -286,7 +331,7 @@ def train_test_env_model(settings: dict, trajectory_data: dict, n_neurons: int =
                                  (trajectory_data["actions_test"][:settings["n_input_steps"], i]).reshape(shape)],
                                 dim=1)
         prediction.append(predict_trajectories(environment_model, model_input, trajectory_data["actions_test"][:, i],
-                                               trajectory_data["n_probes"]))
+                                               trajectory_data["n_probes"], use_ds=settings["predict_ds"]))
     return prediction, train_mse, val_mse
 
 
@@ -339,7 +384,9 @@ def train_test_env_model_episode_wise(settings: dict, trajectory_data: dict, n_n
                                                    episode_data["cd_val"], n_time_steps=settings["n_input_steps"],
                                                    save_dir=settings["load_path"] + settings["model_dir"],
                                                    save_name=f"bestModel_episode{episode + 2}", epochs=epochs,
-                                                   batch_size=batch_size, info=settings["print_temp"])
+                                                   batch_size=batch_size, info=settings["print_temp"],
+                                                   use_ds=settings["predict_ds"],
+                                                   min_max_ds=trajectory_data["min_max_ds"])
 
         # test model: loop over all test data and predict the trajectories based on given initial state and actions
         environment_model.load_state_dict(pt.load("".join([settings["load_path"], settings["model_dir"],
@@ -358,7 +405,8 @@ def train_test_env_model_episode_wise(settings: dict, trajectory_data: dict, n_n
                                     dim=1)
             tmp_prediction.append(predict_trajectories(environment_model, model_input,
                                                        trajectory_data["actions"][episode + 1][:, tra],
-                                                       trajectory_data["n_probes"]))
+                                                       trajectory_data["n_probes"], use_ds=settings["predict_ds"],
+                                                       min_max_ds=trajectory_data["min_max_ds"]))
 
         prediction.append(tmp_prediction)
         train_mse.append(tmp_train_loss)
@@ -406,7 +454,8 @@ def env_model_2models(settings: dict, trajectory_data: dict, n_neurons: int = 32
                                      save_dir="".join([settings["load_path"], settings["model_dir"], "/env_model_1/"]),
                                      save_name="bestModel", epochs=epochs, batch_size=batch_size,
                                      info=settings["print_temp"], cd_model=False,
-                                     two_models=settings["two_env_models"])
+                                     two_models=settings["two_env_models"], use_ds=settings["predict_ds"],
+                                     min_max_ds=trajectory_data["min_max_ds"])
 
     print("starting training for cd environment model")
     train_mse_cd, val_mse_cd = train_model(environment_model_cd, trajectory_data["states_train"],
@@ -417,7 +466,8 @@ def env_model_2models(settings: dict, trajectory_data: dict, n_neurons: int = 32
                                            save_dir="".join([settings["load_path"], settings["model_dir"], "/cd_model/"]),
                                            save_name="bestModel", epochs=settings["epochs_cd"],
                                            batch_size=10, info=settings["print_temp"], cd_model=True,
-                                           two_models=settings["two_env_models"])
+                                           two_models=settings["two_env_models"], use_ds=settings["predict_ds"],
+                                           min_max_ds=trajectory_data["min_max_ds"])
 
     # test model: loop over all test data and predict the trajectories based on given initial state and actions
     environment_model_1.load_state_dict(pt.load("".join([settings["load_path"], settings["model_dir"],
@@ -437,22 +487,24 @@ def env_model_2models(settings: dict, trajectory_data: dict, n_neurons: int = 32
                                                        trajectory_data["cl_test"][:, i],
                                                        trajectory_data["actions_test"][:, i],
                                                        trajectory_data["n_probes"],
-                                                       cd_model=False)
+                                                       cd_model=False, use_ds=settings["predict_ds"],
+                                                       min_max_ds=trajectory_data["min_max_ds"])
         env1_model_pred["cd"] = predict_trajectories_2models(environment_model_cd, model_input,
                                                              trajectory_data["states_test"][:, :, i],
                                                              trajectory_data["cd_test"][:, i],
                                                              trajectory_data["cl_test"][:, i],
                                                              trajectory_data["actions_test"][:, i],
                                                              trajectory_data["n_probes"],
-                                                             cd_model=True)
+                                                             cd_model=True, use_ds=settings["predict_ds"],
+                                                             min_max_ds=trajectory_data["min_max_ds"])
         prediction.append(env1_model_pred)
 
     return prediction, [train_mse, train_mse_cd], [val_mse, val_mse_cd]
 
 
 def predict_trajectories_2models(model: pt.nn.Module, input_traj: pt.Tensor, states: pt.Tensor, cd: pt.Tensor,
-                                 cl: pt.Tensor, actions: pt.Tensor, n_probes: int,
-                                 cd_model: bool = False) -> dict or pt.Tensor:
+                                 cl: pt.Tensor, actions: pt.Tensor, n_probes: int, min_max_ds: list = None,
+                                 cd_model: bool = False, use_ds: bool = False) -> dict or pt.Tensor:
     """
     using the two environment models in order to predict the trajectory based on a given initial state and actions
     (option 1b & 2b)
@@ -461,10 +513,12 @@ def predict_trajectories_2models(model: pt.nn.Module, input_traj: pt.Tensor, sta
     :param input_traj: input states, cl, cd and actions for the first N time steps
     :param actions: actions taken in the CFD environment along the whole trajectory
     :param n_probes: number of probes used in the simulation
+    :param min_max_ds: min- and max of ds used for scaling
     :param cl: trajectories of cl in the CFD environment
     :param cd: trajectories of cd in the CFD environment
     :param states: trajectories of the states at probe locations in the CFD environment
     :param cd_model: flag if this model is for predicting cd only
+    :param use_ds: use change of state for prediction instead of predicting the next state
     :return: dictionary with the trajectories containing the states at the probe locations, cl, cd
     """
     # allocate tensor for predicted states, cl and cd for the whole trajectory and fill in the first N input states
@@ -484,14 +538,26 @@ def predict_trajectories_2models(model: pt.nn.Module, input_traj: pt.Tensor, sta
                                             trajectory[t:t + input_traj.size()[0]].reshape([input_traj.size()[0], 1]),
                                             (actions[t:t + input_traj.size()[0]]).reshape([input_traj.size()[0], 1])],
                                            dim=1))
-            trajectory[t + input_traj.size()[0]] = model(feature).squeeze()
+
+            if use_ds:
+                # s(t+1) = ds + s(t) -> since it's used as new input state: re-scale (NN-output scales to [-1, 1])
+                ds = ((model(feature).squeeze() + 1.0) * 0.5) * (min_max_ds[1] - min_max_ds[1]) + min_max_ds[1]
+                trajectory[t + input_traj.size()[0]] = ds + trajectory[t + input_traj.size()[0] - 1]
+            else:
+                trajectory[t + input_traj.size()[0]] = model(feature).squeeze()
         else:
             # make prediction and append to trajectory tensor, then move input window by one time step
             feature = pt.flatten(pt.concat([trajectory[t:t + input_traj.size()[0], :],
                                             (cd[t:t + input_traj.size()[0]]).reshape([input_traj.size()[0], 1]),
                                             (actions[t:t + input_traj.size()[0]]).reshape([input_traj.size()[0], 1])],
                                            dim=1))
-            trajectory[t + input_traj.size()[0], :] = model(feature).squeeze()
+
+            if use_ds:
+                # s(t+1) = ds + s(t) -> since it's used as new input state: re-scale (NN-output scales to [-1, 1])
+                ds = ((model(feature).squeeze() + 1.0) * 0.5) * (min_max_ds[1] - min_max_ds[1]) + min_max_ds[1]
+                trajectory[t + input_traj.size()[0], :] = ds + trajectory[t + input_traj.size()[0] - 1, :]
+            else:
+                trajectory[t + input_traj.size()[0], :] = model(feature).squeeze()
 
     # resort: divide output data into states and cl or just return the cd trajectory depending on the model
     if cd_model:
@@ -560,7 +626,9 @@ def env_model_episode_wise_2models(settings: dict, trajectory_data: dict, n_neur
                                                                      "/env_model_1/"]),
                                                    save_name=f"bestModel_episode{episode + 2}", epochs=epochs,
                                                    batch_size=batch_size, info=settings["print_temp"],
-                                                   cd_model=False, two_models=settings["two_env_models"])
+                                                   cd_model=False, two_models=settings["two_env_models"],
+                                                   use_ds=settings["predict_ds"],
+                                                   min_max_ds=trajectory_data["min_max_ds"])
 
         print("starting training for cd model")
         tmp_train_mse_cd, tmp_val_mse_cd = train_model(environment_model_cd, episode_data["states_train"],
@@ -575,7 +643,9 @@ def env_model_episode_wise_2models(settings: dict, trajectory_data: dict, n_neur
                                                        save_name=f"bestModel_episode{episode + 2}",
                                                        epochs=settings["epochs_cd"], batch_size=10,
                                                        info=settings["print_temp"], cd_model=True,
-                                                       two_models=settings["two_env_models"])
+                                                       two_models=settings["two_env_models"],
+                                                       use_ds=settings["predict_ds"],
+                                                       min_max_ds=trajectory_data["min_max_ds"])
 
         # test model: loop over all test data and predict the trajectories based on given initial state and actions
         environment_model_1.load_state_dict(pt.load(f"{settings['load_path'] + settings['model_dir']}"
@@ -600,14 +670,16 @@ def env_model_episode_wise_2models(settings: dict, trajectory_data: dict, n_neur
                                                            trajectory_data["cl"][episode + 1][:, tra],
                                                            trajectory_data["actions"][episode + 1][:, tra],
                                                            trajectory_data["n_probes"],
-                                                           cd_model=False)
+                                                           cd_model=False, use_ds=settings["predict_ds"],
+                                                           min_max_ds=trajectory_data["min_max_ds"])
             env1_model_pred["cd"] = predict_trajectories_2models(environment_model_cd, model_input,
                                                                  trajectory_data["states"][episode + 1][:, :, tra],
                                                                  trajectory_data["cd"][episode + 1][:, tra],
                                                                  trajectory_data["cl"][episode + 1][:, tra],
                                                                  trajectory_data["actions"][episode + 1][:, tra],
                                                                  trajectory_data["n_probes"],
-                                                                 cd_model=True)
+                                                                 cd_model=True, use_ds=settings["predict_ds"],
+                                                                 min_max_ds=trajectory_data["min_max_ds"])
             tmp_prediction.append(env1_model_pred)
 
         prediction.append(tmp_prediction)
@@ -629,14 +701,16 @@ if __name__ == "__main__":
     setup = {
         "load_path": r"/media/janis/Daten/Studienarbeit/drlfoam/examples/test_training3/",
         "path_to_probes": r"base/postProcessing/probes/0/",
-        "model_dir": "Results_model/TEST",
-        "episode_depending_model": True,    # either one model for whole data set or new model for each episode
-        "two_env_models": True,             # 'True': one model only for predicting cd, another for probes and cl
+        "model_dir": "Results_model/predict_change_of_state/ds_normalized/TEST_1model",
+        "episode_depending_model": False,    # either one model for whole data set or new model for each episode
+        "two_env_models": False,             # 'True': one model only for predicting cd, another for probes and cl
         "print_temp": False,                # print core temperatur of processor as info
         "normalize": True,                  # True: data will be normalized to interval of [1, 0]
+        "smooth_cd": False,                 # flag if cd-Trajectories should be filtered after loading (low-pass filter)
+        "predict_ds": True,                 # use change of state for prediction, not the next state TO_DO: produces weird results...
         "n_input_steps": 3,                 # initial time steps as input -> n_input_steps > 1
         "len_trajectory": 200,              # trajectory length for training the environment model
-        "ratio": (0.65, 0.35, 0.0),         # splitting ratio for train-, validation and test data
+        "ratio": (0.65, 0.3, 0.05),         # splitting ratio for train-, validation and test data
         "epochs": 10000,                    # number of epochs to run for the environment model
         "n_neurons": 50,                    # number of neurons per layer for the environment model
         "n_layers": 3,                      # number of hidden layers for the environment model

@@ -193,6 +193,21 @@ def dataloader_wrapper(settings: dict) -> dict:
         all_data["cd"], all_data["min_max_cd"] = normalize_data(all_data["cd"])
         all_data["states"], all_data["min_max_states"] = normalize_data(all_data["states"])
 
+        # get the min-/max difference between the states for normalizing ds later, if ds should be used for prediction
+        # here only one min-/max, because cl, cd and p are all normalized to [0, 1]
+        if settings["predict_ds"]:
+            if settings["episode_depending_model"]:
+                min_ds = [pt.min(pt.diff(all_data["cl"], dim=1)), pt.min(pt.diff(all_data["cd"], dim=1)),
+                          pt.min(pt.diff(all_data["states"], dim=1))]
+                max_ds = [pt.max(pt.diff(all_data["cl"], dim=1)), pt.max(pt.diff(all_data["cd"], dim=1)),
+                          pt.max(pt.diff(all_data["states"], dim=1))]
+            else:
+                min_ds = [pt.min(pt.diff(all_data["cl"], dim=0)), pt.min(pt.diff(all_data["cd"], dim=0)),
+                          pt.min(pt.diff(all_data["states"], dim=0))]
+                max_ds = [pt.max(pt.diff(all_data["cl"], dim=0)), pt.max(pt.diff(all_data["cd"], dim=0)),
+                          pt.max(pt.diff(all_data["states"], dim=0))]
+            all_data["min_max_ds"] = [min(min_ds), max(max_ds)]
+
     # split dataset into training-, validation- and test data if whole data set used for train only one (global) model
     if not settings["episode_depending_model"]:
         all_data.update(split_data(all_data["states"], all_data["actions"], all_data["cl"], all_data["cd"],

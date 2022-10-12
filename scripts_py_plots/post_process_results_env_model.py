@@ -213,23 +213,21 @@ def plot_trajectories_of_probes(settings: dict, states_test: dict, predicted_dat
     :param episode_no: number of episode (only used as save name for plot if parameter = "episodes")
     :return: None
     """
-    fig1, ax1 = plt.subplots(nrows=n_probes, ncols=1, figsize=(9, 9), sharex="all", sharey="all")
+    fig, ax = plt.subplots(nrows=n_probes, ncols=1, figsize=(9, 9), sharex="all", sharey="all")
 
     if parameter == "epochs":
         for i in range(n_probes):
-            ax1[i].plot(range(settings["len_trajectory"]), states_test[:, i], color="black")
-            ax1[i].set_ylabel(f"$probe$ ${i + 1}$", rotation="horizontal", labelpad=40, usetex=True, fontsize=13)
-            ax1[i].plot(range(settings["len_trajectory"]), predicted_data[:, i].detach().numpy(),
-                        color="red")
+            ax[i].plot(range(settings["len_trajectory"]), states_test[:, i], color="black")
+            ax[i].set_ylabel(f"$probe$ ${i + 1}$", rotation="horizontal", labelpad=40, usetex=True, fontsize=13)
+            ax[i].plot(range(settings["len_trajectory"]), predicted_data[:, i].detach().numpy(), color="red")
     elif parameter == "episodes":
         for i in range(n_probes):
-            ax1[i].plot(range(settings["len_trajectory"]), states_test[:, i], color="black")
-            ax1[i].set_ylabel(f"$probe$ ${i + 1}$", rotation="horizontal", labelpad=40, usetex=True, fontsize=13)
-            ax1[i].plot(range(settings["len_trajectory"]), predicted_data[:, i].detach().numpy(),
-                        color="red")
-    fig1.subplots_adjust(hspace=0.75)
-    ax1[-1].set_xlabel("$epoch$ $number$", usetex=True, fontsize=13)
-    fig1.tight_layout()
+            ax[i].plot(range(settings["len_trajectory"]), states_test[:, i], color="black")
+            ax[i].set_ylabel(f"$probe$ ${i + 1}$", rotation="horizontal", labelpad=40, usetex=True, fontsize=13)
+            ax[i].plot(range(settings["len_trajectory"]), predicted_data[:, i].detach().numpy(), color="red")
+    fig.subplots_adjust(hspace=0.75)
+    ax[-1].set_xlabel("$epoch$ $number$", usetex=True, fontsize=13)
+    fig.tight_layout()
 
     if parameter == "epochs":
         plt.savefig(settings["load_path"] + settings["model_dir"] + "/plots/real_trajectories_vs_prediction.png",
@@ -255,25 +253,22 @@ def plot_cl_cd_vs_prediction(settings: dict, test_data: dict, predicted_data: Un
     :param episode: number of the episode (only used for the save name of plot)
     :return: None
     """
-    fig2, ax2 = plt.subplots(nrows=1, ncols=2, figsize=(14, 6))
+    fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(14, 6))
     for i in range(2):
         if i == 0:
-            ax2[i].plot(range(settings["len_trajectory"]), test_data["cl_test"][:, number], color="black",
-                        label="real")
-            ax2[i].plot(range(settings["len_trajectory"]), predicted_data[number]["cl"].detach().numpy(),
-                        color="red",
-                        label="prediction")
-            ax2[i].set_ylabel("$lift$ $coefficient$ $\qquad c_l$", usetex=True, fontsize=13)
+            ax[i].plot(range(settings["len_trajectory"]), test_data["cl_test"][:, number], color="black", label="real")
+            ax[i].plot(range(settings["len_trajectory"]), predicted_data[number]["cl"].detach().numpy(), color="red",
+                       label="prediction")
+            ax[i].set_ylabel("$lift$ $coefficient$ $\qquad c_l$", usetex=True, fontsize=13)
         else:
-            ax2[i].plot(range(settings["len_trajectory"]), test_data["cd_test"][:, number], color="black")
-            ax2[i].plot(range(settings["len_trajectory"]), predicted_data[number]["cd"].detach().numpy(),
-                        color="red")
-            ax2[i].set_ylabel("$drag$ $coefficient$ $\qquad c_d$", usetex=True, fontsize=13)
-        ax2[i].set_xlabel("$epoch$ $number$", usetex=True, fontsize=13)
-    fig2.suptitle("coefficients - real vs. prediction", usetex=True, fontsize=16)
-    fig2.tight_layout()
-    fig2.legend(loc="upper right", framealpha=1.0, fontsize=12, ncol=2)
-    fig2.subplots_adjust(wspace=0.25)
+            ax[i].plot(range(settings["len_trajectory"]), test_data["cd_test"][:, number], color="black")
+            ax[i].plot(range(settings["len_trajectory"]), predicted_data[number]["cd"].detach().numpy(), color="red")
+            ax[i].set_ylabel("$drag$ $coefficient$ $\qquad c_d$", usetex=True, fontsize=13)
+        ax[i].set_xlabel("$epoch$ $number$", usetex=True, fontsize=13)
+    fig.suptitle("coefficients - real vs. prediction", usetex=True, fontsize=16)
+    fig.tight_layout()
+    fig.legend(loc="upper right", framealpha=1.0, fontsize=12, ncol=2)
+    fig.subplots_adjust(wspace=0.25)
     if episode != 0:
         plt.savefig("".join([settings["load_path"], settings["model_dir"],
                              f"/plots/real_cl_cd_vs_prediction_episode{episode}.png"]), dpi=600)

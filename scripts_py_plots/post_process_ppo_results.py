@@ -86,12 +86,11 @@ def average_results_for_each_case(data: list) -> dict:
     # calculate the mean and std. deviation in each episode for each case
     avg_data = {"mean_cl": [], "std_cl": [], "mean_cd": [], "std_cd": [], "mean_actions": [], "std_actions": [],
                 "mean_rewards": [], "std_rewards": [], "mean_alpha": [], "std_alpha": [], "mean_beta": [],
-                "std_beta": []}
+                "std_beta": [], "tot_mean_rewards": [], "tot_std_rewards": []}
     for case in range(len(data)):
         n_episodes, len_trajectory = data[case]["actions"].size()[0], data[case]["actions"].size()[1]
 
         # calculate avg. and std. dev. of all trajectories within episode
-        # TO_DO: find more efficient way of sorting the parameters into dict
         cl_reshaped = data[case]["cl"].reshape((n_episodes, len_trajectory * data[case]["n_workers"]))
         cd_reshaped = data[case]["cd"].reshape((n_episodes, len_trajectory * data[case]["n_workers"]))
         actions_reshaped = data[case]["actions"].reshape((n_episodes, len_trajectory * data[case]["n_workers"]))
@@ -112,6 +111,17 @@ def average_results_for_each_case(data: list) -> dict:
         avg_data["std_rewards"].append(pt.std(reward_reshaped, dim=1))
         avg_data["std_alpha"].append(pt.std(alpha_reshaped, dim=1))
         avg_data["std_beta"].append(pt.std(beta_reshaped, dim=1))
+
+        # compute variance of the (mean) beta-distribution of each episode
+        # var = (alpha*beta) / ((alpha + beta)^2 * (alpha+beta+1))
+        var = (avg_data["mean_alpha"][case] * avg_data["mean_beta"][case]) /\
+              ((avg_data["mean_alpha"][case] + avg_data["mean_beta"][case])**2 *
+               (avg_data["mean_alpha"][case] + avg_data["mean_beta"][case] + 1))
+        avg_data["var_beta_fct"].append(var)
+
+        # total rewards of complete training for each case
+        avg_data["tot_mean_rewards"].append(pt.mean(data[case]["rewards"]))
+        avg_data["tot_std_rewards"].append(pt.std(data[case]["rewards"]))
 
     return avg_data
 
@@ -284,6 +294,30 @@ def plot_omega(settings: dict, controlled_cases: Union[list, pt.Tensor]) -> None
     plt.close("all")
 
 
+def plot_variance_of_beta_dist(settings: dict, var_beta_dist: Union[list, pt.Tensor], n_cases: int = 0) -> None:
+    """
+    plots the mean rewards received throughout the training periode and the corresponding standard deviation
+
+    :param settings: dict containing all the paths etc.
+    :param var_beta_dist: computed variance of the beta-function wrt episode
+    :param n_cases: number of cases to compare (= number of imported data)
+    :return: None
+    """
+    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(12, 6))
+    for case in range(n_cases):
+        ax.plot(range(len(var_beta_dist[case])), var_beta_dist[case], color=settings["color"][case],
+                label=settings["legend"][case])
+
+    ax.set_ylabel("$mean$ $variance$ $of$ $beta-distribution$", usetex=True, fontsize=12)
+    ax.set_xlabel("$episode$ $number$", usetex=True, fontsize=12)
+    ax.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=2)
+    plt.savefig("".join([settings["main_load_path"], setup["path_controlled"], "/plots/var_beta_distribution.png"]),
+                dpi=600)
+    plt.show(block=False)
+    plt.pause(2)
+    plt.close("all")
+
+
 def merge_results_for_diff_seeds(data: list, n_seeds: int) -> dict:
     """
     merge the trajectories of the PPO-training episode-wise
@@ -315,6 +349,33 @@ def merge_results_for_diff_seeds(data: list, n_seeds: int) -> dict:
                    "cl": cl, "cd": cd, "states": states, "actions": actions, "rewards": rewards, "alpha": alpha,
                    "beta": beta}
     return merged_data
+
+
+def plot_total_reward(settings: dict, reward_mean: list, reward_std: list, n_cases: int) -> None:
+    """
+    plot the total rewards of the complete training for each case
+
+    :param settings: dict containing all the paths etc.
+    :param reward_mean: mean total rewards received in the training
+    :param reward_std: corresponding standard deviation of the total rewards received in the training
+    :param n_cases: number of cases to compare (= number of imported data)
+    :return: None
+    """
+    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(8, 5))
+    for case in range(n_cases):
+        ax.errorbar(case+1, reward_mean[case], yerr=reward_std[case], color=settings["color"][case], fmt="o", capsize=5,
+                    label=settings["legend"][case])
+
+    ax.set_ylabel("$total$ $reward$", usetex=True, fontsize=12)
+    ax.set_xlabel("$case$ $number$", usetex=True, fontsize=12)
+    ax.set_xticks(range(1, n_cases+1, 1))
+    ax.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=2)
+    plt.grid(which="major", axis="y", linestyle="--", alpha=0.85, color="black", lw=1)
+    plt.savefig("".join([settings["main_load_path"], settings["path_controlled"], "/plots/total_rewards.png"]),
+                dpi=600)
+    plt.show(block=False)
+    plt.pause(2)
+    plt.close("all")
 
 
 def plot_numerical_setup(settings: dict) -> None:
@@ -363,8 +424,8 @@ def plot_numerical_setup(settings: dict) -> None:
     plt.arrow(-0.1 + l, h * 2/3, 0.075, -0.05, color="black", head_width=0.015, clip_on=False)
 
     plt.annotate("$inlet$", (-0.15, h * 2/3 + 0.05), annotation_clip=False, usetex=True, fontsize=13)
-    plt.annotate("$x$", (0.1, -0.065), annotation_clip=False, usetex=True, fontsize=16)
-    plt.annotate("$y$", (-0.1, 0.065), annotation_clip=False, usetex=True, fontsize=16)
+    plt.annotate("$\\frac{x}{d}$", (0.1, -0.065), annotation_clip=False, usetex=True, fontsize=16)
+    plt.annotate("$\\frac{y}{d}$", (-0.1, 0.065), annotation_clip=False, usetex=True, fontsize=16)
     plt.annotate("$outlet$", (-0.2 + l, h * 2/3 + 0.01), annotation_clip=False, usetex=True, fontsize=13)
 
     # annotate the dimensions & position of the domain
@@ -380,11 +441,11 @@ def plot_numerical_setup(settings: dict) -> None:
                      arrowprops=dict(arrowstyle=pos["style"][i][0], color="black", linestyle=pos["style"][i][1]),
                      annotation_clip=False)
 
-    plt.annotate(f"${l}$", (l/2, h + 0.07), annotation_clip=False, usetex=True, fontsize=12)
-    plt.annotate(f"${h}$", (l+0.07, h / 2), annotation_clip=False, usetex=True, fontsize=12)
-    plt.annotate(f"${2*r}$", (pos_x - r/2, pos_y - 3*r), usetex=True, fontsize=12)
-    plt.annotate("${:.2f}$".format(h - (pos_y + r)), (pos_x + 0.025, pos_y + 2.25*r), usetex=True, fontsize=12)
-    plt.annotate("${:.2f}$".format(pos_x - r), (pos_x - 3.25*r, pos_y + 0.5*r), usetex=True, fontsize=12)
+    plt.annotate(f"${l / (2*r)}$", (l/2, h + 0.07), annotation_clip=False, usetex=True, fontsize=12)
+    plt.annotate(f"${h / (2*r)}$", (l+0.07, h / 2), annotation_clip=False, usetex=True, fontsize=12)
+    plt.annotate("$d$", (pos_x - r/4, pos_y - 3*r), usetex=True, fontsize=12)
+    plt.annotate("${:.2f}$".format((h - (pos_y + r)) / (2*r)), (pos_x + 0.025, pos_y + 2.25*r), usetex=True, fontsize=12)
+    plt.annotate("${:.2f}$".format((pos_x - r) / (2*r)), (pos_x - 3.25*r, pos_y + 0.5*r), usetex=True, fontsize=12)
 
     ax.plot((pos_x - r, pos_x - r), (pos_y, pos_y - 0.15), color="black", linestyle="--", lw=1)
     ax.plot((pos_x + r, pos_x + r), (pos_y, pos_y - 0.15), color="black", linestyle="--", lw=1)
@@ -439,6 +500,9 @@ if __name__ == "__main__":
     # average the trajectories episode-wise
     averaged_data = average_results_for_each_case(loaded_data)
 
+    # plot variance of the beta-distribution wrt episodes
+    plot_variance_of_beta_dist(setup, averaged_data["var_beta_fct"], n_cases=len(setup["case_name"]))
+
     # plot mean rewards wrt to episode
     plot_rewards_vs_episode(setup, reward_mean=averaged_data["mean_rewards"], reward_std=averaged_data["std_rewards"],
                             n_cases=len(setup["case_name"]))
@@ -449,6 +513,11 @@ if __name__ == "__main__":
                             actions_mean=averaged_data["mean_actions"], actions_std=averaged_data["std_actions"],
                             n_cases=len(setup["case_name"]), plot_action=False)
 
+    # plot total rewards received in the training
+    plot_total_reward(setup, averaged_data["tot_mean_rewards"], averaged_data["tot_std_rewards"],
+                      n_cases=len(setup["case_name"]))
+
+    # do frequency analysis of the cd- and cl-trajectories wrt episode number for each case
     for case in range(len(setup["case_name"])):
         analyze_frequencies_ppo_training(setup, loaded_data[case], case=case + 1)
 

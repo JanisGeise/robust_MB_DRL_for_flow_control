@@ -116,6 +116,7 @@ if __name__ == "__main__":
         "episode_depending_model": False,   # either one model for whole data set or new model for each episode
         "which_episode": 2,                 # for which episode should the parameter study be done (1st episode = zero)
         "two_env_models": False,            # 'True': one model only for predicting cd, another for probes and cl
+        "predict_ds": True,                 # use change of state for prediction and not the nex state
         "print_temp": False,                # print core temperatur of processor as info
         "normalize": True,                  # True: data will be normalized to interval of [1, 0]
         "n_input_steps": [2, 3, 5, 10, 15, 20, 25, 30, 35],  # number of initial time steps as input
