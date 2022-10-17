@@ -43,7 +43,7 @@ def load_trajectory_data(path: str) -> dict:
     data = {"n_workers": len(observations[0])}
 
     # sort the trajectories from all workers wrt the episode
-    shape = (traj_length, data["n_workers"])
+    shape, counter = (traj_length, data["n_workers"]), 0
     actions, cl, cd, rewards, alpha, beta = pt.zeros(shape), pt.zeros(shape), pt.zeros(shape), pt.zeros(shape), \
                                             pt.zeros(shape), pt.zeros(shape)
     states = pt.zeros((shape[0], observations[0][0]["states"].size()[1], shape[1]))
@@ -53,13 +53,18 @@ def load_trajectory_data(path: str) -> dict:
     data["states"] = pt.zeros((shape[0], shape[1], observations[0][0]["states"].size()[1], shape[2]))
     for episode in range(len(observations)):
         for worker in range(len(observations[episode])):
-            actions[:, worker] = observations[episode][worker]["actions"]
-            states[:, :, worker] = observations[episode][worker]["states"]
-            cl[:, worker] = observations[episode][worker]["cl"]
-            cd[:, worker] = observations[episode][worker]["cd"]
-            rewards[:, worker] = observations[episode][worker]["rewards"]
-            alpha[:, worker] = observations[episode][worker]["alpha"]
-            beta[:, worker] = observations[episode][worker]["beta"]
+            # omit failed trajectories
+            if observations[episode][worker]["actions"].size()[0] < traj_length:
+                counter += 1
+                continue
+            else:
+                actions[:, worker] = observations[episode][worker]["actions"]
+                states[:, :, worker] = observations[episode][worker]["states"]
+                cl[:, worker] = observations[episode][worker]["cl"]
+                cd[:, worker] = observations[episode][worker]["cd"]
+                rewards[:, worker] = observations[episode][worker]["rewards"]
+                alpha[:, worker] = observations[episode][worker]["alpha"]
+                beta[:, worker] = observations[episode][worker]["beta"]
 
         data["actions"][episode, :, :] = actions
         data["states"][episode, :, :] = states
@@ -69,10 +74,46 @@ def load_trajectory_data(path: str) -> dict:
         data["alpha"][episode, :, :] = alpha
         data["beta"][episode, :, :] = beta
 
+    # check how many trajectories failed
+    if counter > 0:
+        print(f"found {counter} failed trajectories")
+
     # load value-, policy and MSE losses of PPO training
     data["network_data"] = pickle.load(open(path + "training_history.pkl", "rb"))
 
     return data
+
+
+def load_all_data(settings: dict) -> list[dict]:
+    """
+    wrapper function for loading the results of the PPO-training and sorting it wrt episodes
+
+    :param settings: setup containing all paths etc.
+    :return: a list containing a dictionary with all the data from each case
+    """
+    # load the results of the training
+    loaded_data = []
+
+    if settings["avg_over_cases"]:
+        for c in range(len(settings["case_name"])):
+            case_data = []
+
+            # assuming each case directory contains subdirectories with training data ran with different seeds,
+            # exclude directories named "plots", readme files, logs etc.
+            dirs = [d for d in glob("".join([settings["main_load_path"], settings["path_controlled"],
+                                             settings["case_name"][c], "/seed[0-9]"]))]
+
+            for d in dirs:
+                case_data.append(load_trajectory_data(d + "/"))
+
+            # merge training results from same case, but different seeds episode-wise
+            loaded_data.append(merge_results_for_diff_seeds(case_data, n_seeds=len(case_data)))
+
+    else:
+        for c in range(len(settings["case_name"])):
+            loaded_data.append(load_trajectory_data(settings["main_load_path"] + settings["path_controlled"] +
+                                                    settings["case_name"][c]))
+    return loaded_data
 
 
 def average_results_for_each_case(data: list) -> dict:
@@ -86,7 +127,9 @@ def average_results_for_each_case(data: list) -> dict:
     # calculate the mean and std. deviation in each episode for each case
     avg_data = {"mean_cl": [], "std_cl": [], "mean_cd": [], "std_cd": [], "mean_actions": [], "std_actions": [],
                 "mean_rewards": [], "std_rewards": [], "mean_alpha": [], "std_alpha": [], "mean_beta": [],
-                "std_beta": [], "tot_mean_rewards": [], "tot_std_rewards": []}
+                "std_beta": [], "tot_mean_rewards": [], "tot_std_rewards": [], "tot_mean_cd": [], "tot_std_cd": [],
+                "tot_mean_cl": [], "tot_std_cl": [], "var_beta_fct": [], "buffer_size": [], "len_traj": []}
+
     for case in range(len(data)):
         n_episodes, len_trajectory = data[case]["actions"].size()[0], data[case]["actions"].size()[1]
 
@@ -114,14 +157,26 @@ def average_results_for_each_case(data: list) -> dict:
 
         # compute variance of the (mean) beta-distribution of each episode
         # var = (alpha*beta) / ((alpha + beta)^2 * (alpha+beta+1))
-        var = (avg_data["mean_alpha"][case] * avg_data["mean_beta"][case]) /\
-              ((avg_data["mean_alpha"][case] + avg_data["mean_beta"][case])**2 *
+        var = (avg_data["mean_alpha"][case] * avg_data["mean_beta"][case]) / \
+              ((avg_data["mean_alpha"][case] + avg_data["mean_beta"][case]) ** 2 *
                (avg_data["mean_alpha"][case] + avg_data["mean_beta"][case] + 1))
         avg_data["var_beta_fct"].append(var)
 
-        # total rewards of complete training for each case
+        # total rewards, cl and cd of complete training for each case
         avg_data["tot_mean_rewards"].append(pt.mean(data[case]["rewards"]))
         avg_data["tot_std_rewards"].append(pt.std(data[case]["rewards"]))
+        avg_data["tot_mean_cl"].append(pt.mean(data[case]["cl"]))
+        avg_data["tot_std_cl"].append(pt.std(data[case]["cl"]))
+        avg_data["tot_mean_cd"].append(pt.mean(data[case]["cd"]))
+        avg_data["tot_std_cd"].append(pt.std(data[case]["cd"]))
+
+        # info about the setup, assuming constant sample rate of 100 Hz
+        if "n_seeds" in data[case]:
+            avg_data["buffer_size"].append(int(data[case]["n_workers"] / data[case]["n_seeds"]))
+
+        else:
+            avg_data["buffer_size"].append(data[case]["n_workers"])
+        avg_data["len_traj"].append(int(len_trajectory / 100))
 
     return avg_data
 
@@ -151,27 +206,24 @@ def plot_results_vs_episode(settings: dict, cd_mean: Union[list, pt.Tensor], cd_
         fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(15, 6))
         n_subfig = 2
 
-    for case in range(n_cases):
+    for c in range(n_cases):
         for i in range(n_subfig):
             if i == 0:
-                ax[i].plot(range(len(cl_mean[case])), cl_mean[case], color=settings["color"][case],
-                           label=settings["legend"][case])
-                ax[i].fill_between(range(len(cl_mean[case])), cl_mean[case] - cl_std[case],
-                                   cl_mean[case] + cl_std[case],
-                                   color=settings["color"][case], alpha=0.3)
+                ax[i].plot(range(len(cl_mean[c])), cl_mean[c], color=settings["color"][c], label=settings["legend"][c])
+                ax[i].fill_between(range(len(cl_mean[c])), cl_mean[c] - cl_std[c], cl_mean[c] + cl_std[c],
+                                   color=settings["color"][c], alpha=0.3)
                 ax[i].set_ylabel("$mean$ $lift$ $coefficient$ $\qquad c_l$", usetex=True, fontsize=13)
 
             elif i == 1:
-                ax[i].plot(range(len(cd_mean[case])), cd_mean[case], color=settings["color"][case])
-                ax[i].fill_between(range(len(cd_mean[case])), cd_mean[case] - cd_std[case],
-                                   cd_mean[case] + cd_std[case],
-                                   color=settings["color"][case], alpha=0.3)
+                ax[i].plot(range(len(cd_mean[c])), cd_mean[c], color=settings["color"][c])
+                ax[i].fill_between(range(len(cd_mean[c])), cd_mean[c] - cd_std[c], cd_mean[c] + cd_std[c],
+                                   color=settings["color"][c], alpha=0.3)
                 ax[i].set_ylabel("$mean$ $drag$ $coefficient$ $\qquad c_d$", usetex=True, fontsize=13)
 
             elif plot_action:
-                ax[i].plot(range(len(actions_mean[case])), actions_mean[case], color=settings["color"][case])
-                ax[i].fill_between(range(len(actions_mean[case])), actions_mean[case] - actions_std[case],
-                                   actions_mean[case] + actions_std[case], color=settings["color"][case], alpha=0.3)
+                ax[i].plot(range(len(actions_mean[c])), actions_mean[c], color=settings["color"][c])
+                ax[i].fill_between(range(len(actions_mean[c])), actions_mean[c] - actions_std[c],
+                                   actions_mean[c] + actions_std[c], color=settings["color"][c], alpha=0.3)
                 ax[i].set_ylabel("$mean$ $action$ $\qquad \omega$", usetex=True, fontsize=13)
 
             ax[i].set_xlabel("$episode$ $number$", usetex=True, fontsize=13)
@@ -198,12 +250,10 @@ def plot_rewards_vs_episode(settings: dict, reward_mean: Union[list, pt.Tensor],
     :return: None
     """
     fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(12, 6))
-    for case in range(n_cases):
-        ax.plot(range(len(reward_mean[case])), reward_mean[case], color=settings["color"][case],
-                label=settings["legend"][case])
-        ax.fill_between(range(len(reward_mean[case])), reward_mean[case] - reward_std[case],
-                        reward_mean[case] + reward_std[case],
-                        color=settings["color"][case], alpha=0.3)
+    for c in range(n_cases):
+        ax.plot(range(len(reward_mean[c])), reward_mean[c], color=settings["color"][c], label=settings["legend"][c])
+        ax.fill_between(range(len(reward_mean[c])), reward_mean[c] - reward_std[c], reward_mean[c] + reward_std[c],
+                        color=settings["color"][c], alpha=0.3)
 
     ax.set_ylabel("$mean$ $reward$", usetex=True, fontsize=12)
     ax.set_xlabel("$episode$ $number$", usetex=True, fontsize=12)
@@ -240,22 +290,22 @@ def plot_cl_cd_alpha_beta(settings: dict, controlled_cases: Union[list, pt.Tenso
         ylabels = ["$\\alpha$", "$\\beta$"]
         n_cases = range(1, len(settings["case_name"]) + 1)
 
-    for case in n_cases:
+    for c in n_cases:
         for i in range(2):
             if i == 0:
-                if case == 0:
+                if c == 0:
                     ax[i].plot(uncontrolled_case[keys[0]], uncontrolled_case[keys[1]], color="black",
                                label="uncontrolled")
                 else:
-                    ax[i].plot(controlled_cases[case - 1][keys[0]], controlled_cases[case - 1][keys[1]],
-                               color=setup["color"][case - 1], label=settings["legend"][case - 1])
+                    ax[i].plot(controlled_cases[c - 1][keys[0]], controlled_cases[c - 1][keys[1]],
+                               color=setup["color"][c - 1], label=settings["legend"][c - 1])
                 ax[i].set_ylabel(ylabels[0], usetex=True, fontsize=13)
             else:
-                if case == 0:
+                if c == 0:
                     ax[i].plot(uncontrolled_case[keys[0]], uncontrolled_case[keys[2]], color="black")
                 else:
-                    ax[i].plot(controlled_cases[case - 1][keys[0]], controlled_cases[case - 1][keys[2]],
-                               color=settings["color"][case - 1])
+                    ax[i].plot(controlled_cases[c - 1][keys[0]], controlled_cases[c - 1][keys[2]],
+                               color=settings["color"][c - 1])
                 ax[i].set_ylabel(ylabels[1], usetex=True, fontsize=13)
 
             ax[i].set_xlabel("$time$ $[s]$", usetex=True, fontsize=13)
@@ -278,9 +328,9 @@ def plot_omega(settings: dict, controlled_cases: Union[list, pt.Tensor]) -> None
     :return: None
     """
     fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(8, 5))
-    for case in range(len(settings["case_name"])):
-        ax.plot(controlled_cases[case]["t"], controlled_cases[case]["omega"], color=settings["color"][case],
-                label=settings["legend"][case])
+    for c in range(len(settings["case_name"])):
+        ax.plot(controlled_cases[c]["t"], controlled_cases[c]["omega"], color=settings["color"][c],
+                label=settings["legend"][c])
 
     ax.set_ylabel("$action$ $\omega$", usetex=True, fontsize=13)
     ax.set_xlabel("$time$ $[s]$", usetex=True, fontsize=13)
@@ -304,9 +354,8 @@ def plot_variance_of_beta_dist(settings: dict, var_beta_dist: Union[list, pt.Ten
     :return: None
     """
     fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(12, 6))
-    for case in range(n_cases):
-        ax.plot(range(len(var_beta_dist[case])), var_beta_dist[case], color=settings["color"][case],
-                label=settings["legend"][case])
+    for c in range(n_cases):
+        ax.plot(range(len(var_beta_dist[c])), var_beta_dist[c], color=settings["color"][c], label=settings["legend"][c])
 
     ax.set_ylabel("$mean$ $variance$ $of$ $beta-distribution$", usetex=True, fontsize=12)
     ax.set_xlabel("$episode$ $number$", usetex=True, fontsize=12)
@@ -331,23 +380,24 @@ def merge_results_for_diff_seeds(data: list, n_seeds: int) -> dict:
     """
     n_traj = sum([data[seed]["n_workers"] for seed in range(n_seeds)])
     shape = (data[0]["cd"].size(0), data[0]["cd"].size(1), n_traj)
-    cl, cd, rewards, actions, alpha, beta = pt.zeros(shape), pt.zeros(shape), pt.zeros(shape), pt.zeros(shape),\
+    cl, cd, rewards, actions, alpha, beta = pt.zeros(shape), pt.zeros(shape), pt.zeros(shape), pt.zeros(shape), \
                                             pt.zeros(shape), pt.zeros(shape)
     states = pt.zeros((data[0]["states"].size(0), data[0]["states"].size(1), data[0]["states"].size(2), n_traj))
 
     for seed in range(n_seeds):
-        cd[:, :, data[seed]["n_workers"]*seed:data[seed]["n_workers"]*(seed+1)] = data[seed]["cd"]
-        cl[:, :, data[seed]["n_workers"]*seed:data[seed]["n_workers"]*(seed+1)] = data[seed]["cl"]
-        rewards[:, :, data[seed]["n_workers"]*seed:data[seed]["n_workers"]*(seed+1)] = data[seed]["rewards"]
-        alpha[:, :, data[seed]["n_workers"]*seed:data[seed]["n_workers"]*(seed+1)] = data[seed]["alpha"]
-        beta[:, :, data[seed]["n_workers"]*seed:data[seed]["n_workers"]*(seed+1)] = data[seed]["beta"]
-        actions[:, :, data[seed]["n_workers"]*seed:data[seed]["n_workers"]*(seed+1)] = data[seed]["actions"]
-        states[:, :, :, data[seed]["n_workers"]*seed:data[seed]["n_workers"]*(seed+1)] = data[seed]["states"]
+        cd[:, :, data[seed]["n_workers"] * seed:data[seed]["n_workers"] * (seed + 1)] = data[seed]["cd"]
+        cl[:, :, data[seed]["n_workers"] * seed:data[seed]["n_workers"] * (seed + 1)] = data[seed]["cl"]
+        rewards[:, :, data[seed]["n_workers"] * seed:data[seed]["n_workers"] * (seed + 1)] = data[seed]["rewards"]
+        alpha[:, :, data[seed]["n_workers"] * seed:data[seed]["n_workers"] * (seed + 1)] = data[seed]["alpha"]
+        beta[:, :, data[seed]["n_workers"] * seed:data[seed]["n_workers"] * (seed + 1)] = data[seed]["beta"]
+        actions[:, :, data[seed]["n_workers"] * seed:data[seed]["n_workers"] * (seed + 1)] = data[seed]["actions"]
+        states[:, :, :, data[seed]["n_workers"] * seed:data[seed]["n_workers"] * (seed + 1)] = data[seed]["states"]
 
     # sort back into dict
     merged_data = {"n_workers": n_traj, "network_data": [data[seed]["network_data"] for seed in range(len(data))],
                    "cl": cl, "cd": cd, "states": states, "actions": actions, "rewards": rewards, "alpha": alpha,
-                   "beta": beta}
+                   "beta": beta, "n_seeds": n_seeds}
+
     return merged_data
 
 
@@ -362,14 +412,14 @@ def plot_total_reward(settings: dict, reward_mean: list, reward_std: list, n_cas
     :return: None
     """
     fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(8, 5))
-    for case in range(n_cases):
-        ax.errorbar(case+1, reward_mean[case], yerr=reward_std[case], color=settings["color"][case], fmt="o", capsize=5,
-                    label=settings["legend"][case])
+    for c in range(n_cases):
+        ax.errorbar(c + 1, reward_mean[c], yerr=reward_std[c], color=settings["color"][c], fmt="o", capsize=5,
+                    label=settings["legend"][c])
 
     ax.set_ylabel("$total$ $reward$", usetex=True, fontsize=12)
     ax.set_xlabel("$case$ $number$", usetex=True, fontsize=12)
-    ax.set_xticks(range(1, n_cases+1, 1))
-    ax.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=2)
+    ax.set_xticks(range(1, n_cases + 1, 1))
+    ax.legend(loc="lower right", framealpha=1.0, fontsize=10, ncol=2)
     plt.grid(which="major", axis="y", linestyle="--", alpha=0.85, color="black", lw=1)
     plt.savefig("".join([settings["main_load_path"], settings["path_controlled"], "/plots/total_rewards.png"]),
                 dpi=600)
@@ -420,19 +470,20 @@ def plot_numerical_setup(settings: dict) -> None:
     # annotate inlet & outlet
     plt.arrow(-0.05, -0.05, 0.1, 0.0, color="black", head_width=0.02, clip_on=False)
     plt.arrow(-0.05, -0.05, 0.0, 0.1, color="black", head_width=0.02, clip_on=False)
-    plt.arrow(-0.1, h * 2/3 + 0.025, 0.075, -0.05, color="black", head_width=0.015, clip_on=False)
-    plt.arrow(-0.1 + l, h * 2/3, 0.075, -0.05, color="black", head_width=0.015, clip_on=False)
+    plt.arrow(-0.1, h * 2 / 3 + 0.025, 0.075, -0.05, color="black", head_width=0.015, clip_on=False)
+    plt.arrow(-0.1 + l, h * 2 / 3, 0.075, -0.05, color="black", head_width=0.015, clip_on=False)
 
-    plt.annotate("$inlet$", (-0.15, h * 2/3 + 0.05), annotation_clip=False, usetex=True, fontsize=13)
+    plt.annotate("$inlet$", (-0.15, h * 2 / 3 + 0.05), annotation_clip=False, usetex=True, fontsize=13)
     plt.annotate("$\\frac{x}{d}$", (0.1, -0.065), annotation_clip=False, usetex=True, fontsize=16)
     plt.annotate("$\\frac{y}{d}$", (-0.1, 0.065), annotation_clip=False, usetex=True, fontsize=16)
-    plt.annotate("$outlet$", (-0.2 + l, h * 2/3 + 0.01), annotation_clip=False, usetex=True, fontsize=13)
+    plt.annotate("$outlet$", (-0.2 + l, h * 2 / 3 + 0.01), annotation_clip=False, usetex=True, fontsize=13)
 
     # annotate the dimensions & position of the domain
-    pos = {"xy": [(0, h+0.04), (0, h), (l, h), (pos_x - r-0.01, pos_y-0.1), (l, h), (l, 0), (l+0.04, h),
-                  (pos_x, pos_y + 0.9*r), (0, pos_y)],
-           "xytxt": [(l, h+0.04), (0, h+0.075), (l, h+0.075), (pos_x + r+0.01, pos_y-0.1), (l+0.075, h), (l+0.075, 0),
-                     (l+0.04, 0), (pos_x, h), (pos_x - 0.9*r, pos_y)],
+    pos = {"xy": [(0, h + 0.04), (0, h), (l, h), (pos_x - r - 0.01, pos_y - 0.1), (l, h), (l, 0), (l + 0.04, h),
+                  (pos_x, pos_y + 0.9 * r), (0, pos_y)],
+           "xytxt": [(l, h + 0.04), (0, h + 0.075), (l, h + 0.075), (pos_x + r + 0.01, pos_y - 0.1), (l + 0.075, h),
+                     (l + 0.075, 0),
+                     (l + 0.04, 0), (pos_x, h), (pos_x - 0.9 * r, pos_y)],
            "style": [("<->", "-"), ("-", "--"), ("-", "--"), ("<->", "-"), ("-", "--"), ("-", "--"), ("<->", "-"),
                      ("<->", "-"), ("<->", "-")]
            }
@@ -441,11 +492,13 @@ def plot_numerical_setup(settings: dict) -> None:
                      arrowprops=dict(arrowstyle=pos["style"][i][0], color="black", linestyle=pos["style"][i][1]),
                      annotation_clip=False)
 
-    plt.annotate(f"${l / (2*r)}$", (l/2, h + 0.07), annotation_clip=False, usetex=True, fontsize=12)
-    plt.annotate(f"${h / (2*r)}$", (l+0.07, h / 2), annotation_clip=False, usetex=True, fontsize=12)
-    plt.annotate("$d$", (pos_x - r/4, pos_y - 3*r), usetex=True, fontsize=12)
-    plt.annotate("${:.2f}$".format((h - (pos_y + r)) / (2*r)), (pos_x + 0.025, pos_y + 2.25*r), usetex=True, fontsize=12)
-    plt.annotate("${:.2f}$".format((pos_x - r) / (2*r)), (pos_x - 3.25*r, pos_y + 0.5*r), usetex=True, fontsize=12)
+    plt.annotate(f"${l / (2 * r)}$", (l / 2, h + 0.07), annotation_clip=False, usetex=True, fontsize=12)
+    plt.annotate(f"${h / (2 * r)}$", (l + 0.07, h / 2), annotation_clip=False, usetex=True, fontsize=12)
+    plt.annotate("$d$", (pos_x - r / 4, pos_y - 3 * r), usetex=True, fontsize=12)
+    plt.annotate("${:.2f}$".format((h - (pos_y + r)) / (2 * r)), (pos_x + 0.025, pos_y + 2.25 * r), usetex=True,
+                 fontsize=12)
+    plt.annotate("${:.2f}$".format((pos_x - r) / (2 * r)), (pos_x - 3.25 * r, pos_y + 0.5 * r), usetex=True,
+                 fontsize=12)
 
     ax.plot((pos_x - r, pos_x - r), (pos_y, pos_y - 0.15), color="black", linestyle="--", lw=1)
     ax.plot((pos_x + r, pos_x + r), (pos_y, pos_y - 0.15), color="black", linestyle="--", lw=1)
@@ -465,40 +518,36 @@ if __name__ == "__main__":
     setup = {
         "main_load_path": r"/media/janis/Daten/Studienarbeit/",     # top-level directory containing all the cases
         "path_to_probes": r"postProcessing/probes/0/",              # path to the file containing trajectories of probes
-        "path_uncontrolled": r"run/cylinder2D_uncontrolled/cylinder2D_uncontrolled_Re100/",     # path to reference case
-        "path_controlled": r"drlfoam/examples/",                    # main path to all the controlled cases
-        "path_final_results": r"results_best_policy/",              # path to the results using the best policy
-        "case_name": ["test_training3/", "test_training4/"],   # dirs containing the training results
+        "path_uncontrolled": r"robust_MB_DRL_for_flow_control/run/cylinder2D_uncontrolled/"
+                             r"cylinder2D_uncontrolled_Re100/",             # path to reference case
+        "path_controlled": r"drlfoam/examples/test_MF_vs_MB_DRL/",          # main path to all the controlled cases
+        "path_final_results": r"results_best_policy/",                      # path to the results using the best policy
+        "case_name": ["MF_DRL_buffer8_2sec/", "MB_DRL_buffer8_2sec/", "MB_DRL_buffer8_2sec_2nd/"],
         "avg_over_cases": False,                                # if cases should be averaged over, e.g. different seeds
-        "plot_final_res": True,                          # if the final policy already ran in openfoam, plot the results
-        "color": ["blue", "red", "green", "darkviolet"],         # colors for the different cases, uncontrolled = black
-        "legend": ["test 3", "test 4"]                            # legend entries
+        "plot_final_res": False,                        # if the final policy already ran in openfoam, plot the results
+        "param_study": False,           # flag if parameter study, only used for generating legend entries automatically
+        "color": ["blue", "red", "green", "darkviolet"],        # colors for the cases, uncontrolled = black
+        "legend": ["MF-DRL ($b = 8$, $l = 2s$)", "MB-DRL ($b = 8$, $l = 2s$, $N_{t, input} = 30$)",
+                   "MB-DRL ($b = 8$, $l = 2s$, $N_{t, input} = 15$)"]
     }
+
     # create directory for plots
     if not os.path.exists(setup["main_load_path"] + setup["path_controlled"] + "plots"):
         os.mkdir(setup["main_load_path"] + setup["path_controlled"] + "plots")
 
-    # load the results of the training
-    loaded_data, controlled, traj = [], [], []
-
-    if setup["avg_over_cases"]:
-        for case in range(len(setup["case_name"])):
-            case_data = []
-
-            # assuming each case directory contains subdirectories with training data ran with different seeds
-            for s in glob("".join([setup["main_load_path"], setup["path_controlled"], setup["case_name"][case], "/*"])):
-                case_data.append(load_trajectory_data(s + "/"))
-
-            # merge training results from same case, but different seeds episode-wise
-            loaded_data.append(merge_results_for_diff_seeds(case_data, n_seeds=len(case_data)))
-
-    else:
-        for case in range(len(setup["case_name"])):
-            loaded_data.append(load_trajectory_data(setup["main_load_path"] + setup["path_controlled"] +
-                                                    setup["case_name"][case]))
+    # load all the data
+    all_data = load_all_data(setup)
 
     # average the trajectories episode-wise
-    averaged_data = average_results_for_each_case(loaded_data)
+    averaged_data = average_results_for_each_case(all_data)
+
+    # for parameter study: generate legend entries automatically
+    if setup["param_study"]:
+        if setup["avg_over_cases"]:
+            setup["legend"] = [f"b = {averaged_data['buffer_size'][c]}, l = {averaged_data['len_traj'][c]} s" for c in
+                               range(len(averaged_data["len_traj"]))]
+        else:
+            setup["legend"] = [f"seed = {c}" for c in range(len(averaged_data["len_traj"]))]
 
     # plot variance of the beta-distribution wrt episodes
     plot_variance_of_beta_dist(setup, averaged_data["var_beta_fct"], n_cases=len(setup["case_name"]))
@@ -519,7 +568,7 @@ if __name__ == "__main__":
 
     # do frequency analysis of the cd- and cl-trajectories wrt episode number for each case
     for case in range(len(setup["case_name"])):
-        analyze_frequencies_ppo_training(setup, loaded_data[case], case=case + 1)
+        analyze_frequencies_ppo_training(setup, all_data[case], case=case + 1)
 
     # if the cases are run in openfoam using the trained network (using the best policy), plot the results
     if setup["plot_final_res"]:
@@ -531,6 +580,7 @@ if __name__ == "__main__":
                                    r"postProcessing/forces/0/coefficient.dat", skiprows=13, header=0, sep=r"\s+",
                                    usecols=[0, 1, 3], names=["t", "cd", "cl"])
 
+        controlled, traj = [], []
         for case in range(len(setup["case_name"])):
             # import the trajectories of the controlled cases
             controlled.append(pd.read_csv(setup["main_load_path"] + setup["path_controlled"] + setup["case_name"][case]

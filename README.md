@@ -19,10 +19,14 @@ approach in order to accelerate the training process was implemented by [Eric Sc
 - the original [drlfoam repository](https://github.com/OFDataCommittee/drlfoam), currently maintained by
   [Andre Weiner](https://github.com/AndreWeiner)
 - implementation of the (model-free) PPO algorithm for active flow control:
-  * **Thummar, Darshan**. Active flow control in simulations of fluid flows based on deep reinforcement learning (May, 2021),<br/>
-  https://doi.org/10.5281/zenodo.4897961.
-  * **Gabriel, Fabian**. Aktive Regelung einer Zylinderumströmung bei variierender Reynoldszahl durch bestärkendes Lernen (October, 2021),
-  https://doi.org/10.5281/zenodo.5634050.
+  * **Thummar, Darshan**. *Active flow control in simulations of fluid flows based on deep reinforcement learning*,
+  https://doi.org/10.5281/zenodo.4897961 (May, 2021).
+  * **Gabriel, Fabian**. *Aktive Regelung einer Zylinderumströmung bei variierender Reynoldszahl durch bestärkendes Lernen*,
+  https://doi.org/10.5281/zenodo.5634050 (October, 2021).
+
+- first attempt of implementing a model-based version for accelerating the training process:
+  * **Schulze, Eric**. *Model-based Reinforcement Learning for Accelerated Learning From CFD Simulations*,
+  https://doi.org/10.5281/zenodo.6375575 (March, 2022).
 
 - first attempt of implementing a model-based version for accelerating the training process:
   * **Schulze, Eric**. Model-based Reinforcement Learning for Accelerated Learning From CFD Simulations (March, 2022),<br/>

@@ -34,7 +34,7 @@
         - execution of the "test_training" function in 'run_training.py' in order to generate trajectories within the
           CFD environment (https://github.com/OFDataCommittee/drlfoam)
 """
-import os
+from os import mkdir, path, remove
 
 from utils import *
 from post_process_results_env_model import *
@@ -183,8 +183,8 @@ def train_model(model: pt.nn.Module, state_train: pt.Tensor, action_train: pt.Te
     """
 
     assert state_train.shape[0] > n_time_steps + 1, "input number of time steps greater than trajectory length!"
-    if not os.path.exists(save_dir):
-        os.mkdir(save_dir)
+    if not path.exists(save_dir):
+        mkdir(save_dir)
     criterion = pt.nn.MSELoss()
     optimizer = pt.optim.Adam(params=model.parameters(), lr=lr)
     pt.autograd.set_detect_anomaly(True)
@@ -330,8 +330,9 @@ def train_test_env_model(settings: dict, trajectory_data: dict, n_neurons: int =
                                  (trajectory_data["cd_test"][:settings["n_input_steps"], i]).reshape(shape),
                                  (trajectory_data["actions_test"][:settings["n_input_steps"], i]).reshape(shape)],
                                 dim=1)
-        prediction.append(predict_trajectories(environment_model, model_input, trajectory_data["actions_test"][:, i],
-                                               trajectory_data["n_probes"], use_ds=settings["predict_ds"]))
+        prediction.append(predict_trajectories(environment_model.eval(), model_input,
+                                               trajectory_data["actions_test"][:, i], trajectory_data["n_probes"],
+                                               use_ds=settings["predict_ds"], min_max_ds=trajectory_data["min_max_ds"]))
     return prediction, train_mse, val_mse
 
 
@@ -403,7 +404,7 @@ def train_test_env_model_episode_wise(settings: dict, trajectory_data: dict, n_n
                                      (trajectory_data["actions"][episode + 1][:settings["n_input_steps"], tra]).reshape(
                                          shape)],
                                     dim=1)
-            tmp_prediction.append(predict_trajectories(environment_model, model_input,
+            tmp_prediction.append(predict_trajectories(environment_model.eval(), model_input,
                                                        trajectory_data["actions"][episode + 1][:, tra],
                                                        trajectory_data["n_probes"], use_ds=settings["predict_ds"],
                                                        min_max_ds=trajectory_data["min_max_ds"]))
@@ -414,7 +415,7 @@ def train_test_env_model_episode_wise(settings: dict, trajectory_data: dict, n_n
 
         # only keep the best model of each episode
         for file in glob("".join([settings['load_path'], settings['model_dir'], "/*_epoch*.pt"])):
-            os.remove(file)
+            remove(file)
 
     return prediction, pt.tensor(train_mse).swapaxes(0, 1), pt.tensor(val_mse).swapaxes(0, 1)
 
@@ -435,8 +436,8 @@ def env_model_2models(settings: dict, trajectory_data: dict, n_neurons: int = 32
     :param batch_size: batch size
     :return: predicted trajectories by the environment model, training and validation loss
     """
-    if not os.path.exists(settings["load_path"] + settings["model_dir"]):
-        os.mkdir(settings["load_path"] + settings["model_dir"])
+    if not path.exists(settings["load_path"] + settings["model_dir"]):
+        mkdir(settings["load_path"] + settings["model_dir"])
 
     # initialize environment networks
     environment_model_1 = FCModel(n_inputs=settings["n_input_steps"] * (trajectory_data["n_probes"] + 3),
@@ -481,7 +482,7 @@ def env_model_2models(settings: dict, trajectory_data: dict, n_neurons: int = 32
                                  (trajectory_data["cd_test"][:settings["n_input_steps"], i]).reshape(shape),
                                  (trajectory_data["actions_test"][:settings["n_input_steps"], i]).reshape(shape)],
                                 dim=1)
-        env1_model_pred = predict_trajectories_2models(environment_model_1, model_input,
+        env1_model_pred = predict_trajectories_2models(environment_model_1.eval(), model_input,
                                                        trajectory_data["states_test"][:, :, i],
                                                        trajectory_data["cd_test"][:, i],
                                                        trajectory_data["cl_test"][:, i],
@@ -489,7 +490,7 @@ def env_model_2models(settings: dict, trajectory_data: dict, n_neurons: int = 32
                                                        trajectory_data["n_probes"],
                                                        cd_model=False, use_ds=settings["predict_ds"],
                                                        min_max_ds=trajectory_data["min_max_ds"])
-        env1_model_pred["cd"] = predict_trajectories_2models(environment_model_cd, model_input,
+        env1_model_pred["cd"] = predict_trajectories_2models(environment_model_cd.eval(), model_input,
                                                              trajectory_data["states_test"][:, :, i],
                                                              trajectory_data["cd_test"][:, i],
                                                              trajectory_data["cl_test"][:, i],
@@ -585,8 +586,8 @@ def env_model_episode_wise_2models(settings: dict, trajectory_data: dict, n_neur
     :return: predicted trajectories by the environment model, training and validation loss
              the return values don't contain the first 2 episodes since there are no prediction available
     """
-    if not os.path.exists(settings["load_path"] + settings["model_dir"]):
-        os.mkdir(settings["load_path"] + settings["model_dir"])
+    if not path.exists(settings["load_path"] + settings["model_dir"]):
+        mkdir(settings["load_path"] + settings["model_dir"])
 
     n_episodes = trajectory_data["states"].size()[0]
     print(f"found {n_episodes} episodes in total")
@@ -664,7 +665,7 @@ def env_model_episode_wise_2models(settings: dict, trajectory_data: dict, n_neur
                                      (trajectory_data["actions"][episode + 1][:settings["n_input_steps"], tra]).reshape(
                                          shape)],
                                     dim=1)
-            env1_model_pred = predict_trajectories_2models(environment_model_1, model_input,
+            env1_model_pred = predict_trajectories_2models(environment_model_1.eval(), model_input,
                                                            trajectory_data["states"][episode + 1][:, :, tra],
                                                            trajectory_data["cd"][episode + 1][:, tra],
                                                            trajectory_data["cl"][episode + 1][:, tra],
@@ -672,7 +673,7 @@ def env_model_episode_wise_2models(settings: dict, trajectory_data: dict, n_neur
                                                            trajectory_data["n_probes"],
                                                            cd_model=False, use_ds=settings["predict_ds"],
                                                            min_max_ds=trajectory_data["min_max_ds"])
-            env1_model_pred["cd"] = predict_trajectories_2models(environment_model_cd, model_input,
+            env1_model_pred["cd"] = predict_trajectories_2models(environment_model_cd.eval(), model_input,
                                                                  trajectory_data["states"][episode + 1][:, :, tra],
                                                                  trajectory_data["cd"][episode + 1][:, tra],
                                                                  trajectory_data["cl"][episode + 1][:, tra],
@@ -690,7 +691,7 @@ def env_model_episode_wise_2models(settings: dict, trajectory_data: dict, n_neur
 
         # only keep the best model of each episode
         for file in glob("".join([settings["load_path"], settings["model_dir"], "/**/*_epoch*.pt"]), recursive=True):
-            os.remove(file)
+            remove(file)
 
     return prediction, [pt.tensor(train_mse).swapaxes(0, 1), pt.tensor(train_mse_cd).swapaxes(0, 1)], \
                        [pt.tensor(val_mse).swapaxes(0, 1), pt.tensor(val_mse_cd).swapaxes(0, 1)]
@@ -707,7 +708,7 @@ if __name__ == "__main__":
         "print_temp": False,                # print core temperatur of processor as info
         "normalize": True,                  # True: data will be normalized to interval of [1, 0]
         "smooth_cd": False,                 # flag if cd-Trajectories should be filtered after loading (low-pass filter)
-        "predict_ds": True,                 # use change of state for prediction, not the next state TO_DO: produces weird results...
+        "predict_ds": False,                 # use change of state for prediction, not the next state (not recommended)
         "n_input_steps": 3,                 # initial time steps as input -> n_input_steps > 1
         "len_trajectory": 200,              # trajectory length for training the environment model
         "ratio": (0.65, 0.3, 0.05),         # splitting ratio for train-, validation and test data
@@ -718,43 +719,34 @@ if __name__ == "__main__":
         "n_layers_cd": 5,                   # number of hidden layers for the env model for cd (if option is set)
         "epochs_cd": 10000,                 # number of epochs to run for the env model for cd (if option is set)
     }
+    assert setup["n_input_steps"] > 1, f"setup['n_input_steps'] has to be > 1"
+
     if setup["episode_depending_model"]:
         assert setup["ratio"][2] == 0, "for episode depending model the test data ratio must be set to zero!"
 
     # load the sampled trajectories divided into training-, validation- and test data
-    pt.Generator().manual_seed(0)                           # ensure reproducibility
+    pt.manual_seed(0)                           # ensure reproducibility
     divided_data = dataloader_wrapper(settings=setup)
 
     # depending on which option are chosen train and test environment model(s)
     if setup["two_env_models"]:
         if setup["episode_depending_model"]:
-            pred_trajectory, train_loss, val_loss = env_model_episode_wise_2models(setup, divided_data,
-                                                                                   n_neurons=setup["n_neurons"],
-                                                                                   n_layers=setup["n_layers"],
-                                                                                   epochs=setup["epochs"])
-
+            train_fct = env_model_episode_wise_2models
         else:
-            pred_trajectory, train_loss, val_loss = env_model_2models(setup, divided_data,
-                                                                      n_neurons=setup["n_neurons"],
-                                                                      n_layers=setup["n_layers"],
-                                                                      epochs=setup["epochs"])
-
+            train_fct = env_model_2models
     else:
         if setup["episode_depending_model"]:
-            pred_trajectory, train_loss, val_loss = train_test_env_model_episode_wise(setup, divided_data,
-                                                                                      n_neurons=setup["n_neurons"],
-                                                                                      n_layers=setup["n_layers"],
-                                                                                      epochs=setup["epochs"])
-
+            train_fct = train_test_env_model_episode_wise
         else:
-            pred_trajectory, train_loss, val_loss = train_test_env_model(setup, divided_data,
-                                                                         n_neurons=setup["n_neurons"],
-                                                                         n_layers=setup["n_layers"],
-                                                                         epochs=setup["epochs"])
+            train_fct = train_test_env_model
+
+    # train and test the environment model(s) based on the method defined in the setup
+    pred_trajectory, train_loss, val_loss = train_fct(setup, divided_data, n_neurons=setup["n_neurons"],
+                                                      n_layers=setup["n_layers"], epochs=setup["epochs"])
 
     # create directory for plots and post-process the data
-    if not os.path.exists("".join([setup["load_path"], setup["model_dir"], "/plots"])):
-        os.mkdir("".join([setup["load_path"], setup["model_dir"], "/plots"]))
+    if not path.exists("".join([setup["load_path"], setup["model_dir"], "/plots"])):
+        mkdir("".join([setup["load_path"], setup["model_dir"], "/plots"]))
 
     if setup["two_env_models"]:
         if setup["episode_depending_model"]:

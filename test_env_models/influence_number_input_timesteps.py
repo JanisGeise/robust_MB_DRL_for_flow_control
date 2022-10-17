@@ -60,8 +60,6 @@ def parameter_study_wrapper(settings: dict, trajectories: dict, n_time_steps: in
 
     return loss
 
-    return loss
-
 
 def manage_network_training_single_proc(settings: dict, trajectory_data: dict) -> list:
     """
@@ -72,8 +70,8 @@ def manage_network_training_single_proc(settings: dict, trajectory_data: dict) -
     :return: list containing the L2- and L1-norm of the error for each input time step, the data is stored as
              [[L2-norm states, L2-norm cl, L2-norm cd], [L1-norm states, L1-norm cl, L1-norm cd]]
     """
-    if not os.path.exists(settings["load_path"] + settings["model_dir"]):
-        os.mkdir(settings["load_path"] + settings["model_dir"])
+    if not path.exists(settings["load_path"] + settings["model_dir"]):
+        mkdir(settings["load_path"] + settings["model_dir"])
 
     # save some parameters, because they get overwritten later
     res, params = [], settings["n_input_steps"]
@@ -82,7 +80,7 @@ def manage_network_training_single_proc(settings: dict, trajectory_data: dict) -
 
         # clean up the directory after each iteration
         for file in glob("".join([settings["load_path"], settings["model_dir"], "/*.pt"])):
-            os.remove(file)
+            remove(file)
     return res
 
 
@@ -163,6 +161,7 @@ if __name__ == "__main__":
             ax.set_ylabel("$L_1-norm$ $(relative$ $prediction$ $error)$", usetex=True, fontsize=12)
         fig.subplots_adjust(left=0.04)
         fig.tight_layout()
+        plt.yscale("log")
         if norm == 0:
             plt.savefig("".join([setup["load_path"], setup["model_dir"], "/total_prediction_error_L2norm.png"]),
                         dpi=600)

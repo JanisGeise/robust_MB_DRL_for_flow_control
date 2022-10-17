@@ -15,8 +15,8 @@ import psutil
 import torch as pt
 
 from glob import glob
-from typing import Tuple
 from natsort import natsorted
+from typing import Tuple, Union
 from scipy.signal import butter, lfilter, lfilter_zi
 
 
@@ -145,15 +145,18 @@ def split_data(states: pt.Tensor, actions: pt.Tensor, cl: pt.Tensor, cd: pt.Tens
     return data
 
 
-def normalize_data(x: pt.Tensor) -> Tuple[pt.Tensor, list]:
+def normalize_data(x: pt.Tensor, x_min_max: Union[None, list, tuple, pt.Tensor] = None) -> Tuple[pt.Tensor, list]:
     """
     normalize data to the interval [0, 1] using a min-max-normalization
 
     :param x: data which should be normalized
+    :param x_min_max: min- and max-value for normalization, if 'None' then min- / max-element of input tensor is used
     :return: tensor with normalized data and corresponding (global) min- and max-values used for normalization
     """
+    if x_min_max is None:
+        x_min_max = [pt.min(x), pt.max(x)]
+
     # x_i_normalized = (x_i - x_min) / (x_max - x_min)
-    x_min_max = [pt.min(x), pt.max(x)]
     return pt.sub(x, x_min_max[0]) / (x_min_max[1] - x_min_max[0]), x_min_max
 
 
