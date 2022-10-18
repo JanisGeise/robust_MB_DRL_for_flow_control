@@ -77,6 +77,8 @@ def load_trajectory_data(path: str) -> dict:
     # check how many trajectories failed
     if counter > 0:
         print(f"found {counter} failed trajectories")
+    else:
+        print("found no invalid trajectories")
 
     # load value-, policy and MSE losses of PPO training
     data["network_data"] = pickle.load(open(path + "training_history.pkl", "rb"))
@@ -298,7 +300,7 @@ def plot_cl_cd_alpha_beta(settings: dict, controlled_cases: Union[list, pt.Tenso
                                label="uncontrolled")
                 else:
                     ax[i].plot(controlled_cases[c - 1][keys[0]], controlled_cases[c - 1][keys[1]],
-                               color=setup["color"][c - 1], label=settings["legend"][c - 1])
+                               color=settings["color"][c - 1], label=settings["legend"][c - 1])
                 ax[i].set_ylabel(ylabels[0], usetex=True, fontsize=13)
             else:
                 if c == 0:
@@ -516,11 +518,10 @@ def plot_numerical_setup(settings: dict) -> None:
 if __name__ == "__main__":
     # Setup
     setup = {
-        "main_load_path": r"/media/janis/Daten/Studienarbeit/",     # top-level directory containing all the cases
+        "main_load_path": r"/media/janis/Daten/Studienarbeit/",         # top-level directory containing all the cases
         "path_to_probes": r"postProcessing/probes/0/",              # path to the file containing trajectories of probes
-        "path_uncontrolled": r"robust_MB_DRL_for_flow_control/run/cylinder2D_uncontrolled/"
-                             r"cylinder2D_uncontrolled_Re100/",             # path to reference case
-        "path_controlled": r"drlfoam/examples/test_MF_vs_MB_DRL/",          # main path to all the controlled cases
+        "path_uncontrolled": r"robust_MB_DRL_for_flow_control/run/uncontrolled/",    # path to reference case
+        "path_controlled": r"drlfoam/examples/test_MF_vs_MB_DRL/",              # main path to all the controlled cases
         "path_final_results": r"results_best_policy/",                      # path to the results using the best policy
         "case_name": ["MF_DRL_buffer8_2sec/", "MB_DRL_buffer8_2sec/", "MB_DRL_buffer8_2sec_2nd/"],
         "avg_over_cases": False,                                # if cases should be averaged over, e.g. different seeds
@@ -576,20 +577,21 @@ if __name__ == "__main__":
         plot_numerical_setup(setup)
 
         # import the trajectory of the uncontrolled case
-        uncontrolled = pd.read_csv(setup["main_load_path"] + setup["path_uncontrolled"] +
-                                   r"postProcessing/forces/0/coefficient.dat", skiprows=13, header=0, sep=r"\s+",
-                                   usecols=[0, 1, 3], names=["t", "cd", "cl"])
+        uncontrolled = pd.read_csv("".join([setup["main_load_path"], setup["path_uncontrolled"],
+                                           r"postProcessing/forces/0/coefficient.dat"]), skiprows=13, header=0,
+                                   sep=r"\s+", usecols=[0, 1, 2], names=["t", "cd", "cl"])
 
         controlled, traj = [], []
         for case in range(len(setup["case_name"])):
             # import the trajectories of the controlled cases
-            controlled.append(pd.read_csv(setup["main_load_path"] + setup["path_controlled"] + setup["case_name"][case]
-                                          + setup["path_final_results"] + r"postProcessing/forces/0/coefficient.dat",
-                                          skiprows=13, header=0, sep=r"\s+", usecols=[0, 1, 2],
-                                          names=["t", "cd", "cl"]))
-            traj.append(pd.read_csv(setup["main_load_path"] + setup["path_controlled"] + setup["case_name"][case] +
-                                    setup["path_final_results"] + r"/trajectory.csv", header=0, sep=r",",
-                                    usecols=[0, 1, 2, 3], names=["t", "omega", "alpha", "beta"]))
+            controlled.append(pd.read_csv("".join([setup["main_load_path"], setup["path_controlled"],
+                                                   setup["case_name"][case], setup["path_final_results"],
+                                                   r"postProcessing/forces/0/coefficient.dat"]), skiprows=13, header=0,
+                                          sep=r"\s+", usecols=[0, 1, 2], names=["t", "cd", "cl"]))
+            traj.append(pd.read_csv("".join([setup["main_load_path"], setup["path_controlled"],
+                                             setup["case_name"][case], setup["path_final_results"],
+                                             r"/trajectory.csv"]), header=0, sep=r",", usecols=[0, 1, 2, 3],
+                                    names=["t", "omega", "alpha", "beta"]))
 
         # plot cl and cd of the controlled cases vs. the uncontrolled cylinder flow
         plot_cl_cd_alpha_beta(setup, controlled, uncontrolled, plot_coeffs=True)

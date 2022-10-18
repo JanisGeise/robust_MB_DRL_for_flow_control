@@ -53,8 +53,8 @@ def data_loader_wrapper_function(settings: dict) -> dict:
     # only the values for total mean & std are relevant
     out = {"mean_cl": averaged_data["tot_mean_cl"], "mean_cd": averaged_data["tot_mean_cd"],
            "mean_rewards": averaged_data["tot_mean_rewards"], "mean_runtime": run_times[:, 0],
-           "std_cl": averaged_data["tot_mean_cl"], "std_cd": averaged_data["tot_std_cd"],
-           "std_rewards": averaged_data["tot_mean_rewards"], "std_runtime": run_times[:, 1],
+           "std_cl": averaged_data["tot_std_cl"], "std_cd": averaged_data["tot_std_cd"],
+           "std_rewards": averaged_data["tot_std_rewards"], "std_runtime": run_times[:, 1],
            "buffer_size": averaged_data["buffer_size"], "len_traj": averaged_data["len_traj"]
            }
     return out
@@ -78,7 +78,7 @@ def get_mean_run_time(path: str) -> pt.Tensor:
 
 def map_data_to_tensor(data: dict, n_buffer: pt.Tensor, n_traj_len: pt.Tensor) -> list[list[pt.Tensor]]:
     """
-    maps the loaded data to tesnors, so they can be plotted as heatmaps, the data is loaded in arbitrary order and
+    maps the loaded data to tenors, so they can be plotted as heatmaps, the data is loaded in arbitrary order, and
     therefore it needs to be determined which data set corresponds to which buffer_size-trajectory_length combination
 
     :param data: the loaded data containing all training results
@@ -113,25 +113,29 @@ def map_data_to_tensor(data: dict, n_buffer: pt.Tensor, n_traj_len: pt.Tensor) -
     # heatmap tensor
     idx_list = [*map(look_up_dict.get, order_loaded_b_l)]
 
-    # sort in the loaded data to the tensors based on the idx_list
+    # sort in the loaded data to the tensors based on the idx_list, take abs() from cl
     for i, _ in enumerate(idx_list):
-        mean_cl[idx_list[i]], mean_cd[idx_list[i]] = data["mean_cl"][i], data["mean_cd"][i]
+        mean_cl[idx_list[i]], mean_cd[idx_list[i]] = pt.abs(data["mean_cl"][i]), data["mean_cd"][i]
         mean_rewards[idx_list[i]], mean_runtime[idx_list[i]] = data["mean_rewards"][i], data["mean_runtime"][i]
         std_cl[idx_list[i]], std_cd[idx_list[i]] = data["std_cl"][i], data["std_cd"][i]
         std_rewards[idx_list[i]], std_runtime[idx_list[i]] = data["std_rewards"][i], data["std_runtime"][i]
 
     # scale everything to intervall [0, 1]
     mean_cl, min_max_cl = normalize_data(mean_cl)
-    std_cl, _ = normalize_data(std_cl, x_min_max=min_max_cl)
+    std_cl = normalize_data(std_cl, x_min_max=min_max_cl)[0]
+    # std_cl = normalize_data(std_cl)[0]
 
     mean_cd, min_max_cd = normalize_data(mean_cd)
-    std_cd, _ = normalize_data(std_cd, x_min_max=min_max_cd)
+    std_cd = normalize_data(std_cd, x_min_max=min_max_cd)[0]
+    # std_cd = normalize_data(std_cd)[0]
 
     mean_rewards, min_max_r = normalize_data(mean_rewards)
-    std_rewards, _ = normalize_data(std_rewards, x_min_max=min_max_r)
+    std_rewards = normalize_data(std_rewards, x_min_max=min_max_r)[0]
+    # std_rewards = normalize_data(std_rewards)[0]
 
     mean_runtime, min_max_rt = normalize_data(mean_runtime)
-    std_runtime, _ = normalize_data(std_runtime, x_min_max=min_max_rt)
+    std_runtime = normalize_data(std_runtime, x_min_max=min_max_rt)[0]
+    # std_runtime = normalize_data(std_runtime)[0]
 
     return [[mean_cl, std_cl], [mean_cd, std_cd], [mean_rewards, std_rewards], [mean_runtime, std_runtime]]
 
@@ -152,10 +156,16 @@ def plot_heatmaps(settings: dict, mean_data: Union[list, pt.Tensor], std_data: U
     fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(14, 6))
     for i in range(2):
         if i == 0:
-            ax[i].set_title(f"$\\mu({parameter}^*)$ $\epsilon$ $[0, 1]$", usetex=True, fontsize=16)
+            if parameter == "c_l":
+                ax[i].set_title(f"$\\mu(|{parameter}^*|)$ $\epsilon$ $[0, 1]$", usetex=True, fontsize=16)
+            else:
+                ax[i].set_title(f"$\\mu({parameter}^*)$ $\epsilon$ $[0, 1]$", usetex=True, fontsize=16)
             z, vmax, fmt = mean_data, 1, ".1f"
         else:
-            ax[i].set_title(f"$\sigma({parameter}^*)$ $\epsilon$ $[0, 1]$", usetex=True, fontsize=16)
+            if parameter == "c_l":
+                ax[i].set_title(f"$\sigma(|{parameter}^*|)$ $\epsilon$ $[0, 1]$", usetex=True, fontsize=16)
+            else:
+                ax[i].set_title(f"$\sigma({parameter}^*)$ $\epsilon$ $[0, 1]$", usetex=True, fontsize=16)
             z, vmax, fmt = std_data, pt.max(std_data), ".2f"
 
         sns.heatmap(z, vmin=0, vmax=vmax, center=0, cmap="Greens", square=True, annot=True,
@@ -201,7 +211,7 @@ if __name__ == "__main__":
     setup["buffer"] = n_buffer_size.tolist()
     setup["traj_len"] = n_traj_length.tolist()
 
-    plot_heatmaps(setup, mean_data=cl[0], std_data=cl[1], parameter="c_l ")
-    plot_heatmaps(setup, mean_data=cd[0], std_data=cd[1], parameter="c_d ")
-    plot_heatmaps(setup, mean_data=rewards[0], std_data=rewards[1], parameter="r ")
-    plot_heatmaps(setup, mean_data=runtime[0], std_data=runtime[1], parameter="t ")
+    plot_heatmaps(setup, mean_data=cl[0], std_data=cl[1], parameter="c_l")
+    plot_heatmaps(setup, mean_data=cd[0], std_data=cd[1], parameter="c_d")
+    plot_heatmaps(setup, mean_data=rewards[0], std_data=rewards[1], parameter="r")
+    plot_heatmaps(setup, mean_data=runtime[0], std_data=runtime[1], parameter="t")

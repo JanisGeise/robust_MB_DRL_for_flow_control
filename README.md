@@ -27,7 +27,3 @@ approach in order to accelerate the training process was implemented by [Eric Sc
 - first attempt of implementing a model-based version for accelerating the training process:
   * **Schulze, Eric**. *Model-based Reinforcement Learning for Accelerated Learning From CFD Simulations*,
   https://doi.org/10.5281/zenodo.6375575 (March, 2022).
-
-- first attempt of implementing a model-based version for accelerating the training process:
-  * **Schulze, Eric**. Model-based Reinforcement Learning for Accelerated Learning From CFD Simulations (March, 2022),<br/>
-  https://doi.org/10.5281/zenodo.6375575.
