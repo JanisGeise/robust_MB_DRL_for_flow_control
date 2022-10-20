@@ -9,8 +9,8 @@
         - 'train_environment_model.py'
 
     prerequisites:
-        - execution of the "test_training" function in 'run_training.py' in order to generate trajectories within the
-          CFD environment (https://github.com/OFDataCommittee/drlfoam)
+        - execution of the 'run_training.py' function in the 'test_training' directory in order to conduct a training
+          and generate trajectories within the CFD environment (https://github.com/OFDataCommittee/drlfoam)
 """
 import seaborn as sns
 from shutil import rmtree

@@ -8,8 +8,8 @@
         - 'post_process_results_env_model.py' for calculating the prediction error
 
     prerequisites:
-        - execution of the "test_training" function in 'run_training.py' in order to generate trajectories within the
-          CFD environment (https://github.com/OFDataCommittee/drlfoam)
+        - execution of the 'run_training.py' function in the 'test_training' directory in order to conduct a training
+          and generate trajectories within the CFD environment (https://github.com/OFDataCommittee/drlfoam)
 """
 from train_environment_model import *
 from post_process_results_env_model import calculate_error_norm

@@ -7,8 +7,8 @@
         - None
 
     prerequisites:
-        - execution of the "test_training" function in 'run_training.py' in order to conduct a training
-          (https://github.com/OFDataCommittee/drlfoam)
+        - execution of the 'run_training.py' function in the 'test_training' directory in order to conduct a training
+          and generate trajectories within the CFD environment (https://github.com/OFDataCommittee/drlfoam)
         - execution of simulation for the best policy from training, also results of a simulation without control
 """
 import torch as pt

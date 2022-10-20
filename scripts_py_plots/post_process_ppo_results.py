@@ -8,11 +8,12 @@
            final results
 
     prerequisites:
-        - execution of the "test_training" function in 'run_training.py' in order to conduct a training
-          (https://github.com/OFDataCommittee/drlfoam)
+        - execution of the 'run_training.py' function in the 'test_training' directory in order to conduct a training
+          and generate trajectories within the CFD environment (https://github.com/OFDataCommittee/drlfoam)
+
+    optional:
         - execution of simulation for the best policy from training, also results of a simulation without control
 """
-import os
 import re
 import pickle
 import torch as pt
@@ -21,6 +22,7 @@ import matplotlib.pyplot as plt
 
 from glob import glob
 from typing import Union
+from os import mkdir, path
 from natsort import natsorted
 from matplotlib.patches import Circle, Rectangle
 
@@ -533,8 +535,8 @@ if __name__ == "__main__":
     }
 
     # create directory for plots
-    if not os.path.exists(setup["main_load_path"] + setup["path_controlled"] + "plots"):
-        os.mkdir(setup["main_load_path"] + setup["path_controlled"] + "plots")
+    if not path.exists(setup["main_load_path"] + setup["path_controlled"] + "plots"):
+        mkdir(setup["main_load_path"] + setup["path_controlled"] + "plots")
 
     # load all the data
     all_data = load_all_data(setup)

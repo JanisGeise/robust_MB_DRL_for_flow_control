@@ -9,8 +9,8 @@
         - 'utils.py', located in the 'test_env_models' directory
 
     prerequisites:
-        - execution of the "test_training" function in 'run_training.py' in order to generate trajectories within the
-          CFD environment (https://github.com/OFDataCommittee/drlfoam)
+        - execution of the 'run_training.py' function in the 'test_training' directory in order to conduct a training
+          and generate trajectories within the CFD environment (https://github.com/OFDataCommittee/drlfoam)
 """
 from glob import glob
 from typing import Union
@@ -78,7 +78,7 @@ def get_mean_run_time(path: str) -> pt.Tensor:
 
 def map_data_to_tensor(data: dict, n_buffer: pt.Tensor, n_traj_len: pt.Tensor) -> list[list[pt.Tensor]]:
     """
-    maps the loaded data to tenors, so they can be plotted as heatmaps, the data is loaded in arbitrary order, and
+    maps the loaded data to tensors, so they can be plotted as heatmaps, the data is loaded in arbitrary order, and
     therefore it needs to be determined which data set corresponds to which buffer_size-trajectory_length combination
 
     :param data: the loaded data containing all training results
@@ -122,20 +122,20 @@ def map_data_to_tensor(data: dict, n_buffer: pt.Tensor, n_traj_len: pt.Tensor) -
 
     # scale everything to intervall [0, 1]
     mean_cl, min_max_cl = normalize_data(mean_cl)
-    std_cl = normalize_data(std_cl, x_min_max=min_max_cl)[0]
-    # std_cl = normalize_data(std_cl)[0]
+    # std_cl = normalize_data(std_cl, x_min_max=min_max_cl)[0]
+    std_cl = normalize_data(std_cl)[0]
 
     mean_cd, min_max_cd = normalize_data(mean_cd)
-    std_cd = normalize_data(std_cd, x_min_max=min_max_cd)[0]
-    # std_cd = normalize_data(std_cd)[0]
+    # std_cd = normalize_data(std_cd, x_min_max=min_max_cd)[0]
+    std_cd = normalize_data(std_cd)[0]
 
     mean_rewards, min_max_r = normalize_data(mean_rewards)
-    std_rewards = normalize_data(std_rewards, x_min_max=min_max_r)[0]
-    # std_rewards = normalize_data(std_rewards)[0]
+    # std_rewards = normalize_data(std_rewards, x_min_max=min_max_r)[0]
+    std_rewards = normalize_data(std_rewards)[0]
 
     mean_runtime, min_max_rt = normalize_data(mean_runtime)
-    std_runtime = normalize_data(std_runtime, x_min_max=min_max_rt)[0]
-    # std_runtime = normalize_data(std_runtime)[0]
+    # std_runtime = normalize_data(std_runtime, x_min_max=min_max_rt)[0]
+    std_runtime = normalize_data(std_runtime)[0]
 
     return [[mean_cl, std_cl], [mean_cd, std_cd], [mean_rewards, std_rewards], [mean_runtime, std_runtime]]
 
@@ -179,7 +179,7 @@ def plot_heatmaps(settings: dict, mean_data: Union[list, pt.Tensor], std_data: U
     fig.subplots_adjust(wspace=0.2)
     fig.tight_layout()
     plt.savefig("".join([settings["main_load_path"], settings["path_controlled"],
-                         f"/plots/mean_std_{parameter}_vs_buffer_and_len_traj.png"]), dpi=600)
+                         f"/plots/heatmaps/mean_std_{parameter}_vs_buffer_and_len_traj.png"]), dpi=600)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")
@@ -204,8 +204,8 @@ if __name__ == "__main__":
     cl, cd, rewards, runtime = map_data_to_tensor(loaded_data, n_buffer=n_buffer_size, n_traj_len=n_traj_length)
 
     # create directory for plots
-    if not path.exists("".join([setup["main_load_path"], setup["path_controlled"], "plots"])):
-        mkdir("".join([setup["main_load_path"], setup["path_controlled"], "plots"]))
+    if not path.exists("".join([setup["main_load_path"], setup["path_controlled"], "plots/heatmaps"])):
+        mkdir("".join([setup["main_load_path"], setup["path_controlled"], "plots/heatmaps"]))
 
     # plot results wrt trajectory length and buffer size as heatmaps
     setup["buffer"] = n_buffer_size.tolist()
