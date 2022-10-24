@@ -45,7 +45,7 @@ class FCModel(pt.nn.Module):
         """
         implements a fully-connected neural network
 
-        :param n_inputs: N probes * N time steps + 1 action + cl + cd
+        :param n_inputs: N probes * N time steps + (1 action + 1 cl + 1 cd) * N time steps
         :param n_outputs: N probes
         :param n_layers: number of hidden layers
         :param n_neurons: number of neurons per layer

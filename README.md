@@ -7,7 +7,7 @@ provides a model-free version is used as a starting point.
 
 This project is a continuation of the work done by [Darshan Thummar](https://github.com/darshan315/flow_past_cylinder_by_DRL) and
 [Fabian Gabriel](https://github.com/FabianGabriel/Active_flow_control_past_cylinder_using_DRL), a first attempt to use a model-based
-approach in order to accelerate the training process was implemented by [Eric Schulze](https://github.com/FabianGabriel/Active_flow_control_past_cylinder_using_DRL).
+approach in order to accelerate the training process was implemented by [Eric Schulze](https://github.com/ErikSchulze1796/Active_flow_control_past_cylinder_using_DRL).
 
 ## Getting started
 

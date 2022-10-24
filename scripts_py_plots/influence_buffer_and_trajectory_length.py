@@ -157,15 +157,15 @@ def plot_heatmaps(settings: dict, mean_data: Union[list, pt.Tensor], std_data: U
     for i in range(2):
         if i == 0:
             if parameter == "c_l":
-                ax[i].set_title(f"$\\mu(|{parameter}^*|)$ $\epsilon$ $[0, 1]$", usetex=True, fontsize=16)
+                ax[i].set_title(f"$\\mu(|{parameter}^*|)$ $\in$ $[0, 1]$", usetex=True, fontsize=16)
             else:
-                ax[i].set_title(f"$\\mu({parameter}^*)$ $\epsilon$ $[0, 1]$", usetex=True, fontsize=16)
+                ax[i].set_title(f"$\\mu({parameter}^*)$ $\in$ $[0, 1]$", usetex=True, fontsize=16)
             z, vmax, fmt = mean_data, 1, ".1f"
         else:
             if parameter == "c_l":
-                ax[i].set_title(f"$\sigma(|{parameter}^*|)$ $\epsilon$ $[0, 1]$", usetex=True, fontsize=16)
+                ax[i].set_title(f"$\sigma(|{parameter}^*|)$ $\in$ $[0, 1]$", usetex=True, fontsize=16)
             else:
-                ax[i].set_title(f"$\sigma({parameter}^*)$ $\epsilon$ $[0, 1]$", usetex=True, fontsize=16)
+                ax[i].set_title(f"$\sigma({parameter}^*)$ $\in$ $[0, 1]$", usetex=True, fontsize=16)
             z, vmax, fmt = std_data, pt.max(std_data), ".2f"
 
         sns.heatmap(z, vmin=0, vmax=vmax, center=0, cmap="Greens", square=True, annot=True,
