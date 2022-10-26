@@ -10,6 +10,9 @@ This project is a continuation of the work done by [Darshan Thummar](https://git
 approach in order to accelerate the training process was implemented by [Eric Schulze](https://github.com/ErikSchulze1796/Active_flow_control_past_cylinder_using_DRL).
 
 ## Getting started
+### General information
+An overview of this repository and information on how to choose parameters for training can be found in the
+[overview notebook](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/blob/main/overview.ipynb).
 
 ## Troubleshooting
 

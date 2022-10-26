@@ -19,6 +19,7 @@ from os import mkdir, path
 import torch as pt
 import seaborn as sns
 import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 
 from test_env_models.utils import normalize_data
 from post_process_ppo_results import average_results_for_each_case, load_all_data
@@ -85,7 +86,8 @@ def map_data_to_tensor(data: dict, n_buffer: pt.Tensor, n_traj_len: pt.Tensor) -
     :param n_buffer: number of the different buffer sizes computed within the parameter study
     :param n_traj_len: number of the different trajectory lengths computed within the parameter study
     :return: list with mean and std. dev. as tensors as:
-             [[mean_cl, std_cl], [mean_cd, std_cd], [mean_rewards, std_rewards], [mean_runtime, std_runtime]]
+             [[mean_cl, std_cl], [mean_cd, std_cd], [mean_rewards, std_rewards], [mean_runtime, std_runtime],
+              [mean(1 / rewards), std(1 / rewards)]]
     """
     # sort date wrt buffer size and trajectory length (rows = buffer size, cols = trajectory length)
     shape = (n_buffer.size()[0], n_traj_len.size()[0])
@@ -120,24 +122,24 @@ def map_data_to_tensor(data: dict, n_buffer: pt.Tensor, n_traj_len: pt.Tensor) -
         std_cl[idx_list[i]], std_cd[idx_list[i]] = data["std_cl"][i], data["std_cd"][i]
         std_rewards[idx_list[i]], std_runtime[idx_list[i]] = data["std_rewards"][i], data["std_runtime"][i]
 
-    # scale everything to intervall [0, 1]
-    mean_cl, min_max_cl = normalize_data(mean_cl)
-    # std_cl = normalize_data(std_cl, x_min_max=min_max_cl)[0]
+    # scale everything to intervall [0, 1], use inverted rewards to calculate optimum since goal is to min(1/r, t)
+    mean_1_rewards = normalize_data((1 / mean_rewards))[0]
+    std_1_rewards = normalize_data(1 / std_rewards)[0]
+
+    mean_cl = normalize_data(mean_cl)[0]
     std_cl = normalize_data(std_cl)[0]
 
-    mean_cd, min_max_cd = normalize_data(mean_cd)
-    # std_cd = normalize_data(std_cd, x_min_max=min_max_cd)[0]
+    mean_cd = normalize_data(mean_cd)[0]
     std_cd = normalize_data(std_cd)[0]
 
-    mean_rewards, min_max_r = normalize_data(mean_rewards)
-    # std_rewards = normalize_data(std_rewards, x_min_max=min_max_r)[0]
+    mean_rewards = normalize_data(mean_rewards)[0]
     std_rewards = normalize_data(std_rewards)[0]
 
-    mean_runtime, min_max_rt = normalize_data(mean_runtime)
-    # std_runtime = normalize_data(std_runtime, x_min_max=min_max_rt)[0]
+    mean_runtime = normalize_data(mean_runtime)[0]
     std_runtime = normalize_data(std_runtime)[0]
 
-    return [[mean_cl, std_cl], [mean_cd, std_cd], [mean_rewards, std_rewards], [mean_runtime, std_runtime]]
+    return [[mean_cl, std_cl], [mean_cd, std_cd], [mean_rewards, std_rewards], [mean_runtime, std_runtime],
+            [mean_1_rewards, std_1_rewards]]
 
 
 def plot_heatmaps(settings: dict, mean_data: Union[list, pt.Tensor], std_data: Union[list, pt.Tensor],
@@ -158,19 +160,34 @@ def plot_heatmaps(settings: dict, mean_data: Union[list, pt.Tensor], std_data: U
         if i == 0:
             if parameter == "c_l":
                 ax[i].set_title(f"$\\mu(|{parameter}^*|)$ $\in$ $[0, 1]$", usetex=True, fontsize=16)
+            elif parameter == "r_t":
+                ax[i].set_title("$\\mu\left(\sum\left[\\frac{1}{r^*}, t^*\\right]\\right)$ $\in$ $[0, 1]$",
+                                usetex=True, fontsize=16)
             else:
                 ax[i].set_title(f"$\\mu({parameter}^*)$ $\in$ $[0, 1]$", usetex=True, fontsize=16)
             z, vmax, fmt = mean_data, 1, ".1f"
         else:
             if parameter == "c_l":
                 ax[i].set_title(f"$\sigma(|{parameter}^*|)$ $\in$ $[0, 1]$", usetex=True, fontsize=16)
+            elif parameter == "r_t":
+                ax[i].set_title("$\sum\left\{\\mu\left(\sum\left[\\frac{1}{r^*}, t^*\\right]\\right),"
+                                "\\sigma\left(\sum\left[\\frac{1}{r^*}, t^*\\right]\\right)\\right\}$ $\in$ $[0, 1]$",
+                                usetex=True, fontsize=16)
+
+                # draw rectangle around minimum
+                row_idx = (pt.argmin(std_data) % std_data.size()[0]).item()
+                col_idx = pt.argmin(std_data[row_idx], dim=0).item()
+                patch = Rectangle((row_idx, col_idx), width=1, height=1, edgecolor="red", linewidth=2, facecolor="none")
+                ax[i].add_patch(patch)
             else:
                 ax[i].set_title(f"$\sigma({parameter}^*)$ $\in$ $[0, 1]$", usetex=True, fontsize=16)
             z, vmax, fmt = std_data, pt.max(std_data), ".2f"
 
-        sns.heatmap(z, vmin=0, vmax=vmax, center=0, cmap="Greens", square=True, annot=True,
-                    cbar=True, linewidths=0.30, linecolor="white", ax=ax[i], xticklabels=settings["traj_len"],
-                    yticklabels=settings["buffer"], cbar_kws={"shrink": 0.75}, fmt=fmt)
+        heatmap = sns.heatmap(z, vmin=0, vmax=vmax, center=0, cmap="Greens", square=True, annot=True, cbar=True,
+                              linewidths=0.30, linecolor="white", ax=ax[i], xticklabels=settings["traj_len"],
+                              yticklabels=settings["buffer"], cbar_kws={"shrink": 0.75}, fmt=fmt)
+        if i == 1 and parameter == "r_t":
+            heatmap.axes.add_patch(patch)
         ax[i].set_ylabel("$buffer$ $size$ $[-]$", usetex=True, fontsize=13, labelpad=15)
         ax[i].set_xlabel("$trajectory$ $length$ $[s]$", usetex=True, fontsize=13, labelpad=15)
 
@@ -201,7 +218,8 @@ if __name__ == "__main__":
     n_traj_length = pt.unique(pt.tensor(loaded_data["len_traj"]))
 
     # sort the loaded data into tensors wrt the buffer size & trajectory length, so they can be plotted as heatmaps
-    cl, cd, rewards, runtime = map_data_to_tensor(loaded_data, n_buffer=n_buffer_size, n_traj_len=n_traj_length)
+    cl, cd, rewards, runtime, inverse_rewards = map_data_to_tensor(loaded_data, n_buffer=n_buffer_size,
+                                                                   n_traj_len=n_traj_length)
 
     # create directory for plots
     if not path.exists("".join([setup["main_load_path"], setup["path_controlled"], "plots/heatmaps"])):
@@ -215,3 +233,5 @@ if __name__ == "__main__":
     plot_heatmaps(setup, mean_data=cd[0], std_data=cd[1], parameter="c_d")
     plot_heatmaps(setup, mean_data=rewards[0], std_data=rewards[1], parameter="r")
     plot_heatmaps(setup, mean_data=runtime[0], std_data=runtime[1], parameter="t")
+    plot_heatmaps(setup, mean_data=(inverse_rewards[0] + runtime[0]) / 2,
+                  std_data=(inverse_rewards[0] + inverse_rewards[1] + runtime[1] + runtime[0]) / 4, parameter="r_t")

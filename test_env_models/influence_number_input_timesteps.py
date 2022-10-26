@@ -108,9 +108,9 @@ def create_subset_of_data(data: dict, episode_no: int = 2) -> dict:
 if __name__ == "__main__":
     # Setup
     setup = {
-        "load_path": r"/media/janis/Daten/Studienarbeit/drlfoam/examples/test_training3/",
-        "path_to_probes": r"base/postProcessing/probes/0/",
-        "model_dir": "Results_model/influence_input_timesteps/two_env_models/one_model_for_all_data/cd_filtered",
+        "load_path": r"../drlfoam/examples/test_training/",     # path with the training data of drlfoam
+        "path_to_probes": r"base/postProcessing/probes/0/",     # should always be the same
+        "model_dir": "test_env_models/",    # relative to the load_path
         "episode_depending_model": False,   # either one model for whole data set or new model for each episode
         "which_episode": 2,                 # for which episode should the parameter study be done (1st episode = zero)
         "two_env_models": False,            # 'True': one model only for predicting cd, another for probes and cl

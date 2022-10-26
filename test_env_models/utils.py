@@ -210,6 +210,8 @@ def dataloader_wrapper(settings: dict) -> dict:
                 max_ds = [pt.max(pt.diff(all_data["cl"], dim=0)), pt.max(pt.diff(all_data["cd"], dim=0)),
                           pt.max(pt.diff(all_data["states"], dim=0))]
             all_data["min_max_ds"] = [min(min_ds), max(max_ds)]
+        else:
+            all_data["min_max_ds"] = [0, 0]
 
     # split dataset into training-, validation- and test data if whole data set used for train only one (global) model
     if not settings["episode_depending_model"]:

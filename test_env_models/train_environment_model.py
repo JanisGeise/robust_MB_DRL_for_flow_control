@@ -700,16 +700,16 @@ def env_model_episode_wise_2models(settings: dict, trajectory_data: dict, n_neur
 if __name__ == "__main__":
     # Setup
     setup = {
-        "load_path": r"/media/janis/Daten/Studienarbeit/drlfoam/examples/test_training3/",
-        "path_to_probes": r"base/postProcessing/probes/0/",
-        "model_dir": "Results_model/predict_change_of_state/ds_normalized/TEST_1model",
-        "episode_depending_model": False,    # either one model for whole data set or new model for each episode
-        "two_env_models": False,             # 'True': one model only for predicting cd, another for probes and cl
+        "load_path": r"../drlfoam/examples/test_training/",     # path with the training data of drlfoam
+        "path_to_probes": r"base/postProcessing/probes/0/",     # should always be the same
+        "model_dir": "test_env_models/",    # relative to the load_path
+        "episode_depending_model": False,   # either one model for whole data set or new model for each episode
+        "two_env_models": False,            # 'True': one model only for predicting cd, another for probes and cl
         "print_temp": False,                # print core temperatur of processor as info
         "normalize": True,                  # True: data will be normalized to interval of [1, 0]
         "smooth_cd": False,                 # flag if cd-Trajectories should be filtered after loading (low-pass filter)
-        "predict_ds": False,                 # use change of state for prediction, not the next state (not recommended)
-        "n_input_steps": 3,                 # initial time steps as input -> n_input_steps > 1
+        "predict_ds": False,                # use change of state for prediction, not the next state (not recommended)
+        "n_input_steps": 30,                # initial time steps as input -> n_input_steps > 1
         "len_trajectory": 200,              # trajectory length for training the environment model
         "ratio": (0.65, 0.3, 0.05),         # splitting ratio for train-, validation and test data
         "epochs": 10000,                    # number of epochs to run for the environment model
