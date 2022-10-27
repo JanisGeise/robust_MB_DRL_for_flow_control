@@ -7,7 +7,7 @@
              then be found by adding the curves of 1/rewards and run time
 
     dependencies:
-        - 'post_process_ppo_results.py', located in the 'scripts_py_plots' directory
+        - 'plot_ppo_results.py', located in the 'scripts_py_plots' directory
         - 'utils.py', located in the 'test_env_models' directory
 
     prerequisites:
@@ -16,7 +16,7 @@
 """
 
 from test_env_models.utils import normalize_data
-from scripts_py_plots.post_process_ppo_results import *
+from scripts_py_plots.plot_ppo_results import *
 from influence_buffer_and_trajectory_length import get_mean_run_time
 
 

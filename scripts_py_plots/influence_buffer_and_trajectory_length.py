@@ -5,7 +5,7 @@
           rewards
 
     dependencies:
-        - 'post_process_ppo_results.py'
+        - 'plot_ppo_results.py'
         - 'utils.py', located in the 'test_env_models' directory
 
     prerequisites:
@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
 from test_env_models.utils import normalize_data
-from post_process_ppo_results import average_results_for_each_case, load_all_data
+from plot_ppo_results import average_results_for_each_case, load_all_data
 
 
 def data_loader_wrapper_function(settings: dict) -> dict:
