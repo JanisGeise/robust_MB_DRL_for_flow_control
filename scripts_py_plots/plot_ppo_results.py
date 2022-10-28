@@ -328,7 +328,8 @@ def plot_numerical_setup(settings: dict) -> None:
 def plot_train_validation_loss(settings: dict, mse_train: Union[list, pt.Tensor], mse_val: Union[list, pt.Tensor],
                                mse_train_cd: Union[list, pt.Tensor], mse_val_cd: Union[list, pt.Tensor],
                                std_dev_train: Union[list, pt.Tensor], std_dev_val: Union[list, pt.Tensor],
-                               std_dev_train_cd: Union[list, pt.Tensor], std_dev_val_cd: Union[list, pt.Tensor]) -> None:
+                               std_dev_train_cd: Union[list, pt.Tensor], std_dev_val_cd: Union[list, pt.Tensor],
+                               case: int = 1) -> None:
     """
     plots the avg. train- and validation loss and the corresponding std. deviation of the environment models wrt to
     epochs
@@ -342,6 +343,7 @@ def plot_train_validation_loss(settings: dict, mse_train: Union[list, pt.Tensor]
     :param std_dev_val: tensor containing the (std. deviation) validation loss of the cl-p env. model
     :param std_dev_train_cd: tensor containing the (std. deviation) training loss of the cd env. model
     :param std_dev_val_cd: tensor containing the (std. deviation) validation loss of the cd env. model
+    :param case: name to append for savin img
     :return: None
     """
     fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(14, 6))
@@ -364,15 +366,16 @@ def plot_train_validation_loss(settings: dict, mse_train: Union[list, pt.Tensor]
             ax[i].fill_between(x, mse_val_cd - std_dev_val_cd, mse_val_cd + std_dev_val_cd, color="red", alpha=0.3)
             ax[i].fill_between(x, mse_train_cd - std_dev_train_cd, mse_train_cd + std_dev_train_cd, color="blue",
                                alpha=0.3)
-            ax[i].set_ylabel("$MSE$ $loss$", usetex=True, fontsize=13)
             ax[i].set_xlabel("$epoch$ $number$", usetex=True, fontsize=13)
             ax[i].set_title("$environment$ $model$ $for$ $c_d$", usetex=True, fontsize=14)
             ax[i].set_yscale("log")
+            ax[i].set_ylabel("$MSE$ $loss$", usetex=True, fontsize=13)
 
     ax[1].legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=2)
-    fig.subplots_adjust(wspace=0.2)
     fig.tight_layout()
-    plt.savefig("".join([settings["main_load_path"], settings["path_controlled"], "/plots/train_val_losses.png"]),
+    fig.subplots_adjust(wspace=0.2)
+    plt.savefig("".join([settings["main_load_path"], settings["path_controlled"],
+                         f"/plots/train_val_losses_case{case}.png"]),
                 dpi=600)
     plt.show(block=False)
     plt.pause(2)
@@ -443,7 +446,7 @@ if __name__ == "__main__":
                                        averaged_data["losses"][case][key[1]], averaged_data["losses"][case][key[2]],
                                        averaged_data["losses"][case][key[3]], averaged_data["losses"][case][key[4]],
                                        averaged_data["losses"][case][key[5]], averaged_data["losses"][case][key[6]],
-                                       averaged_data["losses"][case][key[7]])
+                                       averaged_data["losses"][case][key[7]], case + 1)
 
     # if the cases are run in openfoam using the trained network (using the best policy), plot the results
     if setup["plot_final_res"]:
