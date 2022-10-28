@@ -12,7 +12,11 @@ approach in order to accelerate the training process was implemented by [Eric Sc
 ## Getting started
 ### General information
 An overview of this repository and information on how to choose parameters for training can be found in the
-[overview notebook](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/blob/main/overview.ipynb).
+[overview notebook](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/blob/main/overview.ipynb). This 
+repository only contains all altered and added scripts of *drlfoam* in order to modify the MF-DRL algorithm towards an
+MB-version. These scripts can e.g. be downloaded and pasted into an existing (local) *drlfoam* version. Alternatively, a
+completed MB-version of *drlfoam* can be found [here](https://github.com/JanisGeise/drlfoam), which is forked from the
+[original drlfoam](https://github.com/OFDataCommittee/drlfoam) repository.
 
 ## Troubleshooting
 
