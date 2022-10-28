@@ -1,10 +1,10 @@
 """
     brief:
-        - post-processes and plot the result of the training using PPO and CFD as an environment
+        - post-processes and plots the results of the training using PPO, either for MF-DRL or MB-DRL
         - plots the results of the controlled case using the best policy in comparison to the uncontrolled case
 
     dependencies:
-        - 'ppo_data_loader.py for handling the loading, sorting and merging of all training data
+        - 'ppo_data_loader.py' for handling the loading, sorting and merging of all training data
         - 'analyze_frequency_spectrum.py' for plotting the frequency spectrum of cl- and cd of PPO-training and the
            final results
 
@@ -325,21 +325,75 @@ def plot_numerical_setup(settings: dict) -> None:
     plt.close("all")
 
 
+def plot_train_validation_loss(settings: dict, mse_train: Union[list, pt.Tensor], mse_val: Union[list, pt.Tensor],
+                               mse_train_cd: Union[list, pt.Tensor], mse_val_cd: Union[list, pt.Tensor],
+                               std_dev_train: Union[list, pt.Tensor], std_dev_val: Union[list, pt.Tensor],
+                               std_dev_train_cd: Union[list, pt.Tensor], std_dev_val_cd: Union[list, pt.Tensor]) -> None:
+    """
+    plots the avg. train- and validation loss and the corresponding std. deviation of the environment models wrt to
+    epochs
+
+    :param settings: path where the plot should be saved
+    :param mse_train: tensor containing the (mean) training loss of the cl-p env. model
+    :param mse_val: tensor containing the (mean) validation loss of the cl-p env. model
+    :param mse_train_cd: tensor containing the (mean) training loss of the cd env. model
+    :param mse_val_cd: tensor containing the (mean) validation loss of the cd env. model
+    :param std_dev_train: tensor containing the (std. deviation) training loss of the cl-p env. model
+    :param std_dev_val: tensor containing the (std. deviation) validation loss of the cl-p env. model
+    :param std_dev_train_cd: tensor containing the (std. deviation) training loss of the cd env. model
+    :param std_dev_val_cd: tensor containing the (std. deviation) validation loss of the cd env. model
+    :return: None
+    """
+    fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(14, 6))
+    for i in range(2):
+        if i == 0:
+            x = range(len(mse_train))
+            ax[i].plot(x, mse_train, color="blue")
+            ax[i].plot(x, mse_val, color="red")
+            ax[i].fill_between(x, mse_val - std_dev_val, mse_val + std_dev_val, color="red", alpha=0.3)
+            ax[i].fill_between(x, mse_train - std_dev_train, mse_train + std_dev_train, color="blue", alpha=0.3)
+            ax[i].set_ylabel("$MSE$ $loss$", usetex=True, fontsize=13)
+            ax[i].set_xlabel("$epoch$ $number$", usetex=True, fontsize=13)
+            ax[i].set_title("$environment$ $model$ $for$ $c_l$ $\&$ $p_i$", usetex=True, fontsize=14)
+            ax[i].set_yscale("log")
+
+        else:
+            x = range(len(mse_train_cd))
+            ax[i].plot(x, mse_train_cd, color="blue", label="training loss")
+            ax[i].plot(x, mse_val_cd, color="red", label="validation loss")
+            ax[i].fill_between(x, mse_val_cd - std_dev_val_cd, mse_val_cd + std_dev_val_cd, color="red", alpha=0.3)
+            ax[i].fill_between(x, mse_train_cd - std_dev_train_cd, mse_train_cd + std_dev_train_cd, color="blue",
+                               alpha=0.3)
+            ax[i].set_ylabel("$MSE$ $loss$", usetex=True, fontsize=13)
+            ax[i].set_xlabel("$epoch$ $number$", usetex=True, fontsize=13)
+            ax[i].set_title("$environment$ $model$ $for$ $c_d$", usetex=True, fontsize=14)
+            ax[i].set_yscale("log")
+
+    ax[1].legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=2)
+    fig.subplots_adjust(wspace=0.2)
+    fig.tight_layout()
+    plt.savefig("".join([settings["main_load_path"], settings["path_controlled"], "/plots/train_val_losses.png"]),
+                dpi=600)
+    plt.show(block=False)
+    plt.pause(2)
+    plt.close("all")
+
+
 if __name__ == "__main__":
     # Setup
     setup = {
-        "main_load_path": r"/media/janis/Daten/Studienarbeit/",         # top-level directory containing all the cases
-        "path_to_probes": r"postProcessing/probes/0/",              # path to the file containing trajectories of probes
-        "path_uncontrolled": r"robust_MB_DRL_for_flow_control/run/uncontrolled/",    # path to reference case
-        "path_controlled": r"drlfoam/examples/test_MF_vs_MB_DRL/",              # main path to all the controlled cases
-        "path_final_results": r"results_best_policy/",                      # path to the results using the best policy
-        "case_name": ["MF_DRL_buffer8_2sec/", "MB_DRL_buffer8_2sec/", "MB_DRL_buffer8_2sec_2nd/"],
-        "avg_over_cases": False,                                # if cases should be averaged over, e.g. different seeds
-        "plot_final_res": False,                        # if the final policy already ran in openfoam, plot the results
-        "param_study": False,           # flag if parameter study, only used for generating legend entries automatically
-        "color": ["blue", "red", "green", "darkviolet"],        # colors for the cases, uncontrolled = black
-        "legend": ["MF-DRL ($b = 8$, $l = 2s$)", "MB-DRL ($b = 8$, $l = 2s$, $N_{t, input} = 30$)",
-                   "MB-DRL ($b = 8$, $l = 2s$, $N_{t, input} = 15$)"]
+        "main_load_path": r"../drlfoam/",                           # top-level directory
+        "path_to_probes": r"postProcessing/probes/0/",              # path to probes (usually always the same)
+        "path_uncontrolled": r"run/uncontrolled/",                  # path to uncontrolled reference case
+        "path_controlled": r"examples/run_training/",               # path to controlled cases
+        "path_final_results": r"results_best_policy/",              # path to the results using the best policy
+        # "case_name": ["seed0/", "seed1/", "seed2/"],
+        "case_name": ["e80_r10_b10_f8_MF/", "e80_r10_b10_f5_MB/"],  # dirs with the training results (controlled)
+        "avg_over_cases": True,                                 # if cases should be averaged over, e.g. different seeds
+        "plot_final_res": False,                        # flag for plotting the results using final policy, if available
+        "param_study": True,           # flag if parameter study, only used for generating legend entries automatically
+        "color": ["blue", "red", "green", "darkviolet"],  # line colors, uncontrolled = black (if plot final res = True)
+        "legend": ["MF-DRL #1", "MB-DRL #1"]               # legend entries, uncontrolled is added automatically if True
     }
 
     # create directory for plots
@@ -383,7 +437,13 @@ if __name__ == "__main__":
 
         # also plot training- and validation losses of the environment models, if MB-DRL was used
         if "train_loss_cd" in all_data[case]:
-            pass
+            keys = 2 * ["train_loss_cl_p", "val_loss_cl_p", "train_loss_cd", "val_loss_cd"]
+            key = [f"mean_" + k if idx < 4 else f"std_" + k for idx, k in enumerate(keys)]
+            plot_train_validation_loss(setup, averaged_data["losses"][case][key[0]],
+                                       averaged_data["losses"][case][key[1]], averaged_data["losses"][case][key[2]],
+                                       averaged_data["losses"][case][key[3]], averaged_data["losses"][case][key[4]],
+                                       averaged_data["losses"][case][key[5]], averaged_data["losses"][case][key[6]],
+                                       averaged_data["losses"][case][key[7]])
 
     # if the cases are run in openfoam using the trained network (using the best policy), plot the results
     if setup["plot_final_res"]:

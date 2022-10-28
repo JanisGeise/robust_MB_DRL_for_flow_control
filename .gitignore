@@ -3,3 +3,4 @@
 /run/
 /.ipynb_checkpoints/
 /.plots_overview_notebook/
+/drlfoam/
