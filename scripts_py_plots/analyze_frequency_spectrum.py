@@ -82,45 +82,64 @@ def analyze_frequencies_ppo_training(settings: dict, data: dict, sampling_freq: 
 
 def analyze_frequencies_final_result(settings: dict, uncontrolled_case: Union[dict, pd.DataFrame],
                                      controlled_case: list[Union[dict, pd.DataFrame]],
-                                     t_start: Union[int, float] = 5) -> None:
+                                     traj: list[Union[dict, pd.DataFrame]], t_start: Union[int, float] = 5) -> None:
     """
     analyzes the frequency spectrum of the trajectories for cd and cl of the final results (cases with active flow
     control using the final policies)
 
     :param settings: setup containing all the paths etc.
     :param uncontrolled_case: reference case containing results from uncontrolled flow past cylinder
-    :param controlled_case: results from the loaded cases with active flow control using the final policies
+    :param controlled_case: coefficients from the loaded cases with active flow control using the final policies
+    :param traj: alpha, beta and omega from the loaded cases with active flow control using the final policies
     :param t_start: starting time for analysis in [s], should be greater than 4 sec in order to not use transient phase
     :return: None
     """
     # do frequency analysis for the trajectories of cl and cd for each loaded case
-    f_cd, f_cl, a_cd, a_cl = [], [], [], []
+    f_cd, f_cl, a_cd, a_cl, f_w, a_w = [], [], [], [], [], []
     for case in range(len(settings["case_name"]) + 1):
+        # case == 0 is the uncontrolled flow
         if case == 0:
             # get starting index where t >= t_start
             idx_start = uncontrolled_case["t"][uncontrolled_case["t"] == t_start].index[0]
             sampling_freq = 1 / (uncontrolled_case["t"][1] - uncontrolled_case["t"][0])
             len_traj = len(uncontrolled_case["t"][idx_start:])
+
             f_cd_tmp, a_cd_tmp = welch(uncontrolled_case["cd"][idx_start:] - uncontrolled_case["cd"][idx_start:].mean(),
                                        fs=sampling_freq, nperseg=int(len_traj * 0.5), nfft=len_traj)
+
             f_cl_tmp, a_cl_tmp = welch(uncontrolled_case["cl"][idx_start:] - uncontrolled_case["cl"][idx_start:].mean(),
                                        fs=sampling_freq, nperseg=int(len_traj * 0.5), nfft=len_traj)
+            f_w_tmp, a_w_tmp = [], []
         else:
             # get starting index where t >= t_start
             idx_start = uncontrolled_case["t"][uncontrolled_case["t"] == t_start].index[0]
             sampling_freq = 1 / (controlled_case[case - 1]["t"][1] - controlled_case[case - 1]["t"][0])
+            sf_omega = 1 / (traj[case]["t"][1] - traj[case]["t"][0])
             len_traj = len(controlled_case[case - 1]["t"][idx_start:])
-            f_cd_tmp, a_cd_tmp = welch(controlled_case[case - 1]["cd"][idx_start:] - controlled_case[case - 1]["cd"][idx_start:].mean(),
-                                       fs=sampling_freq, nperseg=int(len_traj * 0.5), nfft=len_traj)
-            f_cl_tmp, a_cl_tmp = welch(controlled_case[case - 1]["cl"][idx_start:] - controlled_case[case - 1]["cl"][idx_start:].mean(),
-                                       fs=sampling_freq, nperseg=int(len_traj * 0.5), nfft=len_traj)
+
+            f_cd_tmp, a_cd_tmp = welch(controlled_case[case - 1]["cd"][idx_start:] -
+                                       controlled_case[case - 1]["cd"][idx_start:].mean(), fs=sampling_freq,
+                                       nperseg=int(len_traj * 0.5), nfft=len_traj)
+
+            f_cl_tmp, a_cl_tmp = welch(controlled_case[case - 1]["cl"][idx_start:] -
+                                       controlled_case[case - 1]["cl"][idx_start:].mean(), fs=sampling_freq,
+                                       nperseg=int(len_traj * 0.5), nfft=len_traj)
+
+            # for omega, the data starts at t = t_start
+            f_w_tmp, a_w_tmp = welch(traj[case]["omega"] - traj[case]["omega"].mean(),
+                                     fs=(1 / (traj[case]["t"][1] - traj[case]["t"][0])),
+                                     nperseg=int(len(traj[case]["omega"]) * 0.5), nfft=len(traj[case]["omega"]))
+
         f_cd.append(f_cd_tmp)
         f_cl.append(f_cl_tmp)
         a_cd.append(a_cd_tmp)
         a_cl.append(a_cl_tmp)
+        f_w.append(f_w_tmp)
+        a_w.append(a_w_tmp)
 
-    fig, ax = plt.subplots(1, 2, figsize=(10, 6))
-    for i in range(2):
+    # plot frequency spectrum cl, cd, and omega
+    fig, ax = plt.subplots(1, 3, figsize=(12, 6))
+    for i in range(3):
         for case in range(len(f_cd)):
             if i == 0:
                 if case == 0:
@@ -130,7 +149,7 @@ def analyze_frequencies_final_result(settings: dict, uncontrolled_case: Union[di
                 ax[i].set_xlabel("$f(c_d)$ $\quad[Hz]$", usetex=True, fontsize=13)
                 ax[i].set_ylabel("$PDS(c_d)$ $\quad[-]$", usetex=True, fontsize=13)
                 ax[i].set_xlim(0, 8)
-            else:
+            elif i == 1:
                 if case == 0:
                     ax[i].plot(f_cl[case], a_cl[case], color="black")
                 else:
@@ -138,11 +157,44 @@ def analyze_frequencies_final_result(settings: dict, uncontrolled_case: Union[di
                 ax[i].set_xlabel("$f(c_l)$ $\quad[Hz]$", usetex=True, fontsize=13)
                 ax[i].set_ylabel("$PDS(c_l)$ $\quad[-]$", usetex=True, fontsize=13)
                 ax[i].set_xlim(0, 8)
+            else:
+                if case == 0:
+                    pass
+                else:
+                    ax[i].plot(f_w[case], a_w[case], color=settings["color"][case-1])
+                ax[i].set_xlabel("$f(\omega)$ $\quad[Hz]$", usetex=True, fontsize=13)
+                ax[i].set_ylabel("$PDS(\omega)$ $\quad[-]$", usetex=True, fontsize=13)
+                ax[i].set_xlim(0, 20)
 
     fig.tight_layout()
-    fig.subplots_adjust(wspace=0.25, top=0.93)
+    fig.subplots_adjust(wspace=0.35, top=0.93)
     fig.legend(ncol=len(f_cd), loc="upper right", framealpha=1.0, fontsize=10)
     plt.savefig("".join([settings["main_load_path"], settings["path_controlled"], f"/plots/freq_final_result.png"]),
+                dpi=600)
+    plt.show(block=False)
+    plt.pause(2)
+    plt.close("all")
+
+    # plot a more detailed view of frequency spectrum of omega
+    # f = 2.67 Hz ~ f(cl(uncontrolled)), f = 5.67 Hz ~ f(cd(uncontrolled))
+    fig, ax = plt.subplots(1, 1, figsize=(14, 5))
+    ax.axvspan(-42, -41, 0, 1, color="red", alpha=0.3, label="$N * f(c_l)$")
+    ax.axvspan(-42, -41, 0, 1, color="green", alpha=0.3, label="$N * f(c_d)$")
+
+    for l in pt.arange(2.67, 25, 2.67):
+        ax.axvspan(l - 0.25, l + 0.25, 0, 1, color="red", alpha=0.3)
+    for l in pt.arange(5.67, 25, 5.67):
+        ax.axvspan(l - 0.25, l + 0.25, 0, 1, color="green", alpha=0.3)
+
+    for c in range(1, len(settings["case_name"])+1):
+        ax.plot(f_w[c], a_w[c], color=settings["color"][c-1], marker="None", label=settings["legend"][c-1])
+    ax.set_xlim(0, 20)
+    ax.set_ylim(0, 1)
+    ax.set_xlabel("$f(\omega)$ $\quad[Hz]$", usetex=True, fontsize=13)
+    ax.set_ylabel("$PDS(\omega)$ $\quad[-]$", usetex=True, fontsize=13)
+    fig.tight_layout()
+    plt.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=1)
+    plt.savefig("".join([settings["main_load_path"], settings["path_controlled"], f"/plots/freq_analysis_cmp.png"]),
                 dpi=600)
     plt.show(block=False)
     plt.pause(2)

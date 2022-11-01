@@ -148,7 +148,7 @@ def average_results_for_each_case(data: list) -> dict:
                 "std_beta": [], "tot_mean_rewards": [], "tot_std_rewards": [], "tot_mean_cd": [], "tot_std_cd": [],
                 "tot_mean_cl": [], "tot_std_cl": [], "var_beta_fct": [], "buffer_size": [], "len_traj": [],
                 "ratio_MB_MF": []}
-    names, keys, losses, status = {}, ["cl", "cd", "actions", "rewards", "alpha", "beta"], [], False
+    names, keys, losses = {}, ["cl", "cd", "actions", "rewards", "alpha", "beta"], []
 
     for case in range(len(data)):
         n_episodes, len_trajectory = data[case]["actions"].size()[0], data[case]["actions"].size()[1]
@@ -194,9 +194,9 @@ def average_results_for_each_case(data: list) -> dict:
                 else:
                     tmp_mean[k] = pt.std(data[case][keys_tmp[idx]], dim=0)
             losses.append(tmp_mean)
-
-    if status:
-        avg_data["losses"] = losses
+        else:
+            losses.append([])
+    avg_data["losses"] = losses
 
     return avg_data
 
