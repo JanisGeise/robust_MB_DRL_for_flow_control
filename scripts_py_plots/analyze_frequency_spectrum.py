@@ -201,5 +201,76 @@ def analyze_frequencies_final_result(settings: dict, uncontrolled_case: Union[di
     plt.close("all")
 
 
+def analyze_frequencies_probes_final_result(settings: dict, uncontrolled_case: Union[dict, pd.DataFrame],
+                                            controlled_case: list[Union[dict, pd.DataFrame]],
+                                            t_start: Union[int, float] = 5, n_probes: int = 12) -> None:
+    """
+    analyzes the frequency spectrum of the trajectories for probes places in the flow fiel, here of the final results
+    (cases with active flow control using the final policies vs. uncontrolled case)
+
+    :param settings: setup containing all the paths etc.
+    :param uncontrolled_case: reference case containing results from uncontrolled flow past cylinder
+    :param controlled_case: coefficients from the loaded cases with active flow control using the final policies
+    :param t_start: starting time for analysis in [s], should be greater than 4 sec in order to not use transient phase
+    :param n_probes: number of probes places in the flow field
+    :return: None
+    """
+    # do frequency analysis for the trajectories of cl and cd for each loaded case
+    f_probes, a_probes = [], []
+    for case in range(len(settings["case_name"]) + 1):
+        # case == 0 is the uncontrolled flow
+        if case == 0:
+            # get starting index where t >= t_start
+            idx_start = uncontrolled_case["t"][uncontrolled_case["t"] == t_start].index[0]
+            sampling_freq = 1 / (uncontrolled_case["t"][1] - uncontrolled_case["t"][0])
+            len_traj = len(uncontrolled_case["t"][idx_start:])
+
+            f_probes_tmp, a_probes_tmp = [], []
+            for p in range(n_probes):
+                f, a = welch(
+                    uncontrolled_case[f"probe_{p}"][idx_start:] - uncontrolled_case[f"probe_{p}"][idx_start:].mean(),
+                    fs=sampling_freq, nperseg=int(len_traj * 0.5), nfft=len_traj)
+                f_probes_tmp.append(f)
+                a_probes_tmp.append(a)
+
+        else:
+            # get starting index where t >= t_start
+            idx_start = uncontrolled_case["t"][uncontrolled_case["t"] == t_start].index[0]
+            sampling_freq = 1 / (controlled_case[case - 1]["t"][1] - controlled_case[case - 1]["t"][0])
+            len_traj = len(controlled_case[case - 1]["t"][idx_start:])
+
+            f_probes_tmp, a_probes_tmp = [], []
+            for p in range(n_probes):
+                f, a = welch(controlled_case[case - 1][f"probe_{p}"][idx_start:] -
+                             controlled_case[case - 1][f"probe_{p}"][idx_start:].mean(), fs=sampling_freq,
+                             nperseg=int(len_traj * 0.5), nfft=len_traj)
+                f_probes_tmp.append(f)
+                a_probes_tmp.append(a)
+
+        f_probes.append(f_probes_tmp)
+        a_probes.append(a_probes_tmp)
+
+    # plot results
+    fig, ax = plt.subplots(1, len(settings["case_name"]) + 1, figsize=(15, 6))
+    for case in range(len(f_probes)):
+        for probe in range(len(f_probes[case])):
+            if case == 0:
+                ax[case].plot(f_probes[case][probe], a_probes[case][probe])
+                ax[case].set_title("uncontrolled")
+            else:
+                ax[case].plot(f_probes[case][probe], a_probes[case][probe], label=f"probe {probe}")
+                ax[case].set_title(settings["legend"][case - 1])
+        ax[case].set_xlim(0, 8)
+        ax[case].set_xlabel("$f(p_i)$ $\quad[Hz]$", usetex=True, fontsize=13)
+        ax[case].set_ylabel("$PDS(p_i)$ $\quad[-]$", usetex=True, fontsize=13)
+    ax[-1].legend(loc="upper right", framealpha=1.0, fontsize=10)
+    fig.tight_layout()
+    plt.savefig("".join([settings["main_load_path"], settings["path_controlled"], f"/plots/freq_analysis_probes.png"]),
+                dpi=600)
+    plt.show(block=False)
+    plt.pause(2)
+    plt.close("all")
+
+
 if __name__ == "__main__":
     pass

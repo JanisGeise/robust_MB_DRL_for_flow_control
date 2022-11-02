@@ -24,7 +24,8 @@ from os import mkdir, path
 from matplotlib.patches import Circle, Rectangle
 
 from ppo_data_loader import *
-from analyze_frequency_spectrum import analyze_frequencies_final_result, analyze_frequencies_ppo_training
+from analyze_frequency_spectrum import analyze_frequencies_final_result, analyze_frequencies_ppo_training,\
+    analyze_frequencies_probes_final_result
 
 
 def plot_results_vs_episode(settings: dict, cd_mean: Union[list, pt.Tensor], cd_std: Union[list, pt.Tensor],
@@ -250,7 +251,7 @@ def plot_numerical_setup(settings: dict) -> None:
     pattern = r"\d.\d+ \d.\d+ \d.\d+"
     path = "".join([settings["main_load_path"], settings["path_controlled"], settings["case_name"][0],
                     settings["path_final_results"]])
-    with open("".join([path, settings["path_to_probes"], "p"]), "r") as f:
+    with open("".join([path, settings["path_to_probes"]]), "r") as f:
         loc = f.readlines()
 
     # get coordinates of probes, omit appending empty lists and map strings to floats
@@ -427,13 +428,14 @@ if __name__ == "__main__":
     # Setup
     setup = {
         "main_load_path": r"../drlfoam/",                           # top-level directory
-        "path_to_probes": r"postProcessing/probes/0/",              # path to probes (usually always the same)
+        "path_to_probes": r"postProcessing/probes/0/p",              # path to probes (usually always the same)
         "path_uncontrolled": r"run/uncontrolled/",                  # path to uncontrolled reference case
         "path_controlled": r"examples/run_training/",               # path to controlled cases
         "path_final_results": r"results_best_policy/",              # path to the results using the best policy
         # "case_name": ["seed0/", "seed1/", "seed2/"],
         "case_name": ["e80_r10_b10_f8_MF/", "e80_r10_b10_f5_MB/"],  # dirs with the training results (controlled)
         "e_trajectory": [0, 1, 4, 75, 79],              # for which episodes should a trajectory be plotted (cl & cd)
+        "n_probes": 12,         # number of probes placed in flow field
         "avg_over_cases": True,                                 # if cases should be averaged over, e.g. different seeds
         "plot_final_res": False,                        # flag for plotting the results using final policy, if available
         "param_study": True,           # flag if parameter study, only used for generating legend entries automatically
@@ -529,3 +531,6 @@ if __name__ == "__main__":
         # matches with the other data (since uncontrolled case hass no alpha, beta, omega)
         traj.insert(0, [])
         analyze_frequencies_final_result(setup, uncontrolled, controlled, traj)
+
+        # analyze frequency spectrum of probes
+        analyze_frequencies_probes_final_result(setup, p_uncontrolled, p_controlled, n_probes=setup["n_probes"])
