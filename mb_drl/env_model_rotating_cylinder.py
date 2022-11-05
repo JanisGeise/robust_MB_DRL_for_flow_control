@@ -117,7 +117,7 @@ def train_model(model: pt.nn.Module, state_train: pt.Tensor, action_train: pt.Te
     if not os.path.exists(save_dir):
         os.mkdir(save_dir)
     criterion = pt.nn.MSELoss()
-    optimizer = pt.optim.Adam(params=model.parameters(), lr=lr)
+    optimizer = pt.optim.AdamW(params=model.parameters(), lr=lr, weight_decay=1e-2)
     pt.autograd.set_detect_anomaly(True)
 
     # allocate some tensors for feature-label selection and losses
@@ -175,6 +175,10 @@ def train_model(model: pt.nn.Module, state_train: pt.Tensor, action_train: pt.Te
             print(f"finished epoch {epoch}, training loss = {training_loss[epoch]}, "
                   f"validation loss = {validation_loss[epoch]}")
 
+        # early stopping
+        if training_loss[-1] and validation_loss[-1] <= 1e-5:
+            break
+
     return training_loss, validation_loss
 
 
@@ -202,18 +206,16 @@ def denormalize_data(x: pt.Tensor, x_min_max: list) -> pt.Tensor:
     return (x_min_max[1] - x_min_max[0]) * x + x_min_max[0]
 
 
-def split_data(files: list, len_traj: int, n_probes: int, n_train: float = 0.65) -> dict:
+def load_trajectory_data(files: list, len_traj: int, n_probes: int):
     """
-    load the trajectory data, split the trajectories into training and validation data, normalize all the data to [0, 1]
+    load the trajectory data from the observations_*.pkl files
 
     :param files: list containing the file names of the last two episodes run in CFD environment
     :param len_traj: length of the trajectory, 1sec CFD = 100 epochs
     :param n_probes: number of probes placed in the flow field
-    :param n_train: amount of the loaded data used  for training the environment models (training data)
-    :return: dict containing the loaded, sorted and normalized data as well as the data for training- and validation
+    :return: cl, cd, actions, states, alpha, beta
     """
     observations = [pickle.load(open(file, "rb")) for file in files]
-    data = {}
 
     # sort the trajectories from all workers, for training the models, it doesn't matter from which episodes the data is
     shape, n_col = (len_traj, len(observations) * len(observations[0])), 0
@@ -245,9 +247,45 @@ def split_data(files: list, len_traj: int, n_probes: int, n_train: float = 0.65)
                 states[:, :, n_col] = observations[observation][j]["states"][:]
             n_col += 1
 
+    return cl, cd, actions, states, alpha, beta
+
+
+def split_data(files: list, len_traj: int, n_probes: int, n_train: float = 0.65, buffer_size: int = 10,
+               n_e_cfd: int = 0) -> dict:
+    """
+    load the trajectory data, split the trajectories into training and validation data, normalize all the data to [0, 1]
+
+    :param files: list containing the file names of the last two episodes run in CFD environment
+    :param len_traj: length of the trajectory, 1sec CFD = 100 epochs
+    :param n_probes: number of probes placed in the flow field
+    :param n_train: amount of the loaded data used  for training the environment models (training data)
+    :param buffer_size: current buffer size
+    :param n_e_cfd: number of currently available episodes run in CFD
+    :return: dict containing the loaded, sorted and normalized data as well as the data for training- and validation
+    """
+    data = {}
+    cl, cd, actions, states, alpha, beta = load_trajectory_data(files[-2:], len_traj, n_probes)
+
     # delete the allocated columns of the failed trajectories (since they would alter the mean values)
     ok = cl.abs().sum(dim=0).bool()
     ok_states = states.abs().sum(dim=0).sum(dim=0).bool()
+
+    # if buffer of current CFD episode is empty, then only one CFD episode can be used for training which is likely to
+    # crash. In this case, load trajectories from 3 CFD episodes ago (e-2 wouldn't work, since e-2 and e-1 where used to
+    # train the last model ensemble)
+    if len([i.item() for i in ok if i]) <= buffer_size and n_e_cfd > 3:
+        # determine current episode and then take the 'observations_*.pkl' from 3 CFD episodes ago
+        cl_tmp, cd_tmp, actions_tmp, states_tmp, alpha_tmp, beta_tmp = load_trajectory_data([files[-4]], len_traj,
+                                                                                            n_probes)
+
+        # merge into existing data
+        cl, cd, actions, states = pt.concat([cl, cl_tmp], dim=1), pt.concat([cd, cd_tmp], dim=1),\
+                                  pt.concat([actions, actions_tmp], dim=1), pt.concat([states, states_tmp], dim=2)
+        alpha, beta = pt.concat([alpha, alpha_tmp], dim=1), pt.concat([beta, beta_tmp], dim=1)
+
+        # and finally update the masks to remove non-converged trajectories
+        ok = cl.abs().sum(dim=0).bool()
+        ok_states = states.abs().sum(dim=0).sum(dim=0).bool()
 
     # normalize the data to interval of [0, 1] (except alpha and beta)
     states, data["min_max_states"] = normalize_data(states[:, :, ok_states])
@@ -447,7 +485,7 @@ def fill_buffer_from_models(env_model_cl_p: list, env_model_cd: list, episode: i
     min_max = {"states": observation["min_max_states"], "cl": observation["min_max_cl"],
                "cd": observation["min_max_cd"], "actions": observation["min_max_actions"]}
 
-    counter, failed, max_iter = 0, 0, 500
+    counter, failed, max_iter = 0, 0, 250
     while counter < buffer_size:
         print(f"start filling buffer with trajectory {counter + 1}/{buffer_size} using environment models")
 
@@ -472,15 +510,15 @@ def fill_buffer_from_models(env_model_cl_p: list, env_model_cd: list, episode: i
         else:
             print(f"discarding trajectory {counter + 1}/{buffer_size} due to invalid values:")
             print(f"\tmin / max / mean cl: {pt.min(pred['cl']).item()}, {pt.max(pred['cl']).item()},"
-                  f"{pt.mean(pred['cl']).item()}")
+                  f" {pt.mean(pred['cl']).item()}")
             print(f"\tmin / max / mean cd: {pt.min(pred['cd']).item()}, {pt.max(pred['cd']).item()},"
-                  f"{pt.mean(pred['cd']).item()}")
+                  f" {pt.mean(pred['cd']).item()}")
             failed += 1
 
         # if all the trajectories are invalid, abort training in order to avoid getting stuck in while-loop forever
         if failed >= max_iter:
-            print(f"could not generate valid trajectories after {max_iter} iterations...training aborted")
-            exit(1)
+            print(f"could not generate valid trajectories after {max_iter} iterations... going back to CFD")
+            counter = buffer_size
 
     return predictions
 

@@ -505,8 +505,11 @@ if __name__ == "__main__":
         uncontrolled = pd.read_csv("".join([setup["main_load_path"], setup["path_uncontrolled"],
                                            r"postProcessing/forces/0/coefficient.dat"]), skiprows=13, header=0,
                                    sep=r"\s+", usecols=[0, 1, 2], names=["t", "cd", "cl"])
+        p_uncontrolled = pd.read_csv("".join([setup["main_load_path"], setup["path_uncontrolled"],
+                                              setup["path_to_probes"]]), skiprows=setup["n_probes"]+1, header=0,
+                                     names=["t"] + [f"probe_{i}" for i in range(setup["n_probes"])], sep=r"\s+")
 
-        controlled, traj = [], []
+        controlled, p_controlled, traj = [], [], []
         for case in range(len(setup["case_name"])):
             # import the trajectories of the controlled cases
             controlled.append(pd.read_csv("".join([setup["main_load_path"], setup["path_controlled"],
@@ -517,6 +520,10 @@ if __name__ == "__main__":
                                              setup["case_name"][case], setup["path_final_results"],
                                              r"/trajectory.csv"]), header=0, sep=r",", usecols=[0, 1, 2, 3],
                                     names=["t", "omega", "alpha", "beta"]))
+            p_controlled.append(pd.read_csv("".join([setup["main_load_path"], setup["path_controlled"],
+                                                     setup["case_name"][case], setup["path_final_results"],
+                                                     setup["path_to_probes"]]), skiprows=setup["n_probes"]+1, header=0,
+                                            names=["t"] + [f"probe_{i}" for i in range(setup["n_probes"])], sep=r"\s+"))
 
         # plot cl and cd of the controlled cases vs. the uncontrolled cylinder flow
         plot_cl_cd_alpha_beta(setup, controlled, uncontrolled, plot_coeffs=True)

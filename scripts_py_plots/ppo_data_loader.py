@@ -92,9 +92,13 @@ def load_trajectory_data(path: str) -> dict:
         cd_train_loss, cd_val_loss = pt.zeros(shape), pt.zeros(shape)
         cl_p_train_loss, cl_p_val_loss = pt.zeros(shape), pt.zeros(shape)
 
-        for l in range(len(losses)):
-            cd_train_loss[l, :], cd_val_loss[l, :] = losses[l]["train_loss_cd"], losses[l]["train_loss_cl_p"]
-            cl_p_train_loss[l, :], cl_p_val_loss[l, :] = losses[l]["val_loss_cd"], losses[l]["val_loss_cl_p"]
+        # if early stopping is used -> losses don't have the same shape anymore...
+        try:
+            for l in range(len(losses)):
+                cd_train_loss[l, :], cd_val_loss[l, :] = losses[l]["train_loss_cd"], losses[l]["train_loss_cl_p"]
+                cl_p_train_loss[l, :], cl_p_val_loss[l, :] = losses[l]["val_loss_cd"], losses[l]["val_loss_cl_p"]
+        except RuntimeError:
+            pass
 
         data["train_loss_cd"], data["val_loss_cd"] = cd_train_loss, cd_val_loss
         data["train_loss_cl_p"], data["val_loss_cl_p"] = cl_p_train_loss, cl_p_val_loss

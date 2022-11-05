@@ -114,7 +114,7 @@ def main(args):
     start_time = time()
     for e in range(episodes):
         print(f"Start of episode {e}")
-        # TO_DO: outsource everything into classes / fct etc. once this works -> adopt style of drlfoam code
+        # TO_DO: outsource everything into classes / fct etc. -> adopt style of drlfoam code...
         # every 5th episode sample from CFD
         if e == 0 or e % 5 == 0:
             # save path of CFD episodes -> models should be trained with all CFD data available
@@ -130,7 +130,8 @@ def main(args):
             # in 1st episode: CFD data is used to train environment models for 1st time
             if e == 0:
                 cl_p_models, cd_models = [], []
-                obs_resorted = split_data(obs_cfd, len_traj=n_epochs, n_probes=env.n_states)
+                obs_resorted = split_data(obs_cfd, len_traj=n_epochs, n_probes=env.n_states, buffer_size=buffer_size,
+                                          n_e_cfd=len(obs_cfd))
 
                 # train 1st models in ensemble with 5000 epochs
                 env_model_cl_p, env_model_cd, losses = train_env_models(training_path, n_input_time_steps, env.n_states,
@@ -151,7 +152,8 @@ def main(args):
             # ever 5th episode: models are loaded and re-trained based on CFD data of the current & last CFD episode
             else:
                 cl_p_models, cd_models = [], []
-                obs_resorted = split_data(obs_cfd[-2:], len_traj=n_epochs, n_probes=env.n_states)
+                obs_resorted = split_data(obs_cfd, len_traj=n_epochs, n_probes=env.n_states, n_e_cfd=len(obs_cfd),
+                                          buffer_size=buffer_size)
                 env_model_cl_p, env_model_cd, losses = train_env_models(training_path, n_input_time_steps, env.n_states,
                                                                         observations=obs_resorted, epochs=500,
                                                                         epochs_cd=500, load=True, model_no=0)
@@ -188,13 +190,35 @@ def main(args):
                                                      n_input=n_input_time_steps, len_traj=n_epochs,
                                                      buffer_size=buffer_size)
 
-            # save the generated trajectories, for now without model buffer instance
-            save_trajectories(training_path, e, predicted_traj)
+            # if len(predicted_traj) < buffer size -> discard trajectories from models and go back to CFD
+            if len(predicted_traj) < buffer_size:
+                buffer._n_fills = e
+                buffer.fill()
+                states, actions, rewards = buffer.observations
+                obs_cfd.append("".join([training_path + f"/observations_{e}.pkl"]))
 
-            # get the states, actions and rewards required for PPO-training
-            states = [predicted_traj[traj]["states"] for traj in range(buffer_size)]
-            actions = [predicted_traj[traj]["actions"] for traj in range(buffer_size)]
-            rewards = [predicted_traj[traj]["rewards"] for traj in range(buffer_size)]
+            else:
+                # save the generated trajectories, for now without model buffer instance
+                save_trajectories(training_path, e, predicted_traj)
+
+                # get the states, actions and rewards required for PPO-training
+                states = [predicted_traj[traj]["states"] for traj in range(buffer_size)]
+                actions = [predicted_traj[traj]["actions"] for traj in range(buffer_size)]
+                rewards = [predicted_traj[traj]["rewards"] for traj in range(buffer_size)]
+
+        # in case no trajectories in CFD converged, use trajectories of the last CFD episodes to train policy network
+        if not actions and e >= 5:
+            try:
+                n_traj = obs_resorted["actions"].size()[1]
+                actions = [obs_resorted["actions"][:, pt.randint(0, n_traj, size=(buffer_size,))]]
+                rewards = [obs_resorted["rewards"][:, pt.randint(0, n_traj, size=(buffer_size,))]]
+                states = [obs_resorted["states"][:, :, pt.randint(0, n_traj, size=(buffer_size,))]]
+
+            # if we don't have any trajectories generated within the last 3 CFD episodes, it doesn't make sense to
+            # continue with the training
+            except IndexError:
+                print("could not find any valid trajectories from the last 3 CFD episodes!\nAborting training.")
+                exit(0)
 
         # continue with original PPO-training routine
         print_statistics(actions, rewards)
