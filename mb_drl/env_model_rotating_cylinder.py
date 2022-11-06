@@ -220,7 +220,8 @@ def load_trajectory_data(files: list, len_traj: int, n_probes: int):
     # sort the trajectories from all workers, for training the models, it doesn't matter from which episodes the data is
     shape, n_col = (len_traj, len(observations) * len(observations[0])), 0
     states = pt.zeros((shape[0], n_probes, shape[1]))
-    actions, cl, cd, alpha, beta = pt.zeros(shape), pt.zeros(shape), pt.zeros(shape), pt.zeros(shape), pt.zeros(shape)
+    actions, cl, cd, alpha, beta, rewards = pt.zeros(shape), pt.zeros(shape), pt.zeros(shape), pt.zeros(shape),\
+                                            pt.zeros(shape), pt.zeros(shape)
 
     for observation in range(len(observations)):
         for j in range(len(observations[observation])):
@@ -237,6 +238,7 @@ def load_trajectory_data(files: list, len_traj: int, n_probes: int):
                 cd[:, n_col] = observations[observation][j]["cd"][:len_traj]
                 alpha[:, n_col] = observations[observation][j]["alpha"][:len_traj]
                 beta[:, n_col] = observations[observation][j]["beta"][:len_traj]
+                rewards[:, n_col] = observations[observation][j]["rewards"][:len_traj]
                 states[:, :, n_col] = observations[observation][j]["states"][:len_traj][:]
             else:
                 actions[:, n_col] = observations[observation][j]["actions"]
@@ -244,10 +246,11 @@ def load_trajectory_data(files: list, len_traj: int, n_probes: int):
                 cd[:, n_col] = observations[observation][j]["cd"]
                 alpha[:, n_col] = observations[observation][j]["alpha"]
                 beta[:, n_col] = observations[observation][j]["beta"]
+                rewards[:, n_col] = observations[observation][j]["rewards"]
                 states[:, :, n_col] = observations[observation][j]["states"][:]
             n_col += 1
 
-    return cl, cd, actions, states, alpha, beta
+    return cl, cd, actions, states, alpha, beta, rewards
 
 
 def split_data(files: list, len_traj: int, n_probes: int, n_train: float = 0.65, buffer_size: int = 10,
@@ -264,7 +267,7 @@ def split_data(files: list, len_traj: int, n_probes: int, n_train: float = 0.65,
     :return: dict containing the loaded, sorted and normalized data as well as the data for training- and validation
     """
     data = {}
-    cl, cd, actions, states, alpha, beta = load_trajectory_data(files[-2:], len_traj, n_probes)
+    cl, cd, actions, states, alpha, beta, rewards = load_trajectory_data(files[-2:], len_traj, n_probes)
 
     # delete the allocated columns of the failed trajectories (since they would alter the mean values)
     ok = cl.abs().sum(dim=0).bool()
@@ -275,17 +278,26 @@ def split_data(files: list, len_traj: int, n_probes: int, n_train: float = 0.65,
     # train the last model ensemble)
     if len([i.item() for i in ok if i]) <= buffer_size and n_e_cfd > 3:
         # determine current episode and then take the 'observations_*.pkl' from 3 CFD episodes ago
-        cl_tmp, cd_tmp, actions_tmp, states_tmp, alpha_tmp, beta_tmp = load_trajectory_data([files[-4]], len_traj,
-                                                                                            n_probes)
+        cl_tmp, cd_tmp, actions_tmp, states_tmp, alpha_tmp, beta_tmp, rewards_tmp = load_trajectory_data([files[-4]],
+                                                                                                         len_traj,
+                                                                                                         n_probes)
 
         # merge into existing data
         cl, cd, actions, states = pt.concat([cl, cl_tmp], dim=1), pt.concat([cd, cd_tmp], dim=1),\
                                   pt.concat([actions, actions_tmp], dim=1), pt.concat([states, states_tmp], dim=2)
-        alpha, beta = pt.concat([alpha, alpha_tmp], dim=1), pt.concat([beta, beta_tmp], dim=1)
+        alpha, beta, rewards = pt.concat([alpha, alpha_tmp], dim=1), pt.concat([beta, beta_tmp], dim=1),\
+                               pt.concat([rewards, rewards_tmp], dim=1)
 
         # and finally update the masks to remove non-converged trajectories
         ok = cl.abs().sum(dim=0).bool()
         ok_states = states.abs().sum(dim=0).sum(dim=0).bool()
+
+    # if we don't have any trajectories generated within the last 3 CFD episodes, it doesn't make sense to
+    # continue with the training
+    if cl[:, ok].size()[1] == 0:
+        print("[env_model_rotating_cylinder.py]: could not find any valid trajectories from the last 3 CFD episodes!"
+              "\nAborting training.")
+        exit(0)
 
     # normalize the data to interval of [0, 1] (except alpha and beta)
     states, data["min_max_states"] = normalize_data(states[:, :, ok_states])
@@ -295,7 +307,7 @@ def split_data(files: list, len_traj: int, n_probes: int, n_train: float = 0.65,
 
     # save states, actions, cl and cd for sampling the initial states later (easier if data is not already split up)
     data["actions"], data["cl"], data["cd"] = actions, cl, cd
-    data["states"], data["alpha"], data["beta"] = states, alpha[:, ok], beta[:, ok]
+    data["states"], data["alpha"], data["beta"], data["rewards"] = states, alpha[:, ok], beta[:, ok], rewards[:, ok]
 
     # split dataset into training data and validation data
     n_train = int(n_train * actions.size()[1])

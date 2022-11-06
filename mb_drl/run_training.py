@@ -210,14 +210,18 @@ def main(args):
         if not actions and e >= 5:
             try:
                 n_traj = obs_resorted["actions"].size()[1]
-                actions = [obs_resorted["actions"][:, pt.randint(0, n_traj, size=(buffer_size,))]]
-                rewards = [obs_resorted["rewards"][:, pt.randint(0, n_traj, size=(buffer_size,))]]
-                states = [obs_resorted["states"][:, :, pt.randint(0, n_traj, size=(buffer_size,))]]
+                traj_n = pt.randint(0, n_traj, size=(buffer_size,))
+                actions = [denormalize_data(obs_resorted["actions"][:, t.item()],
+                                            obs_resorted["min_max_actions"]) for t in traj_n]
+                rewards = [obs_resorted["rewards"][:, t.item()] for t in traj_n]
+                states = [denormalize_data(obs_resorted["states"][:, :, t],
+                                           obs_resorted["min_max_states"]) for t in traj_n]
 
             # if we don't have any trajectories generated within the last 3 CFD episodes, it doesn't make sense to
             # continue with the training
-            except IndexError:
-                print("could not find any valid trajectories from the last 3 CFD episodes!\nAborting training.")
+            except IndexError as e:
+                print(f"[run_training.py]: {e}, could not find any valid trajectories from the last 3 CFD episodes!"
+                      "\nAborting training.")
                 exit(0)
 
         # continue with original PPO-training routine
