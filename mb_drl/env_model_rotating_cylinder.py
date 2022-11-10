@@ -419,8 +419,8 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
 
 def train_env_models(path: str, n_t_input: int, n_probes: int, observations: dict, n_neurons: int = 50,
                      n_layers: int = 3, n_neurons_cd: int = 50, n_layers_cd: int = 5, batch_size: int = 25,
-                     epochs: int = 5000, epochs_cd: int = 5000, load: bool = False, model_no: int = 0):
-    # -> tuple[FCModel, FCModel, list]:   (not working with python3.8)
+                     epochs: int = 5000, epochs_cd: int = 5000, load: bool = False,
+                     model_no: int = 0) -> FCModel and FCModel and list:
     """
     initializes two environment models, trains and validates them based on the sampled data from the CFD
     environment. The models are trained and validated using the previous 2 episodes run in the CFD environment
@@ -478,8 +478,7 @@ def train_env_models(path: str, n_t_input: int, n_probes: int, observations: dic
 
 
 def fill_buffer_from_models(env_model_cl_p: list, env_model_cd: list, episode: int, path: str, observation: dict,
-                            n_input: int, n_probes: int, buffer_size: int, len_traj: int):
-    # cluster runs python 3.8... -> list[dict]:
+                            n_input: int, n_probes: int, buffer_size: int, len_traj: int) -> list:
     """
     creates trajectories using data from the CFD environment as initial states and the previously trained environment
     models in order to fill the buffer
@@ -525,11 +524,11 @@ def fill_buffer_from_models(env_model_cl_p: list, env_model_cd: list, episode: i
             predictions.append(pred)
             counter += 1
         else:
-            print(f"discarding trajectory {counter + 1}/{buffer_size} due to invalid values:")
+            print(f"discarding trajectory {counter + 1}/{buffer_size} due to invalid values [try no. {failed}]:")
             print(f"\tmin / max / mean cl: {pt.min(pred['cl']).item()}, {pt.max(pred['cl']).item()},"
                   f" {pt.mean(pred['cl']).item()}")
             print(f"\tmin / max / mean cd: {pt.min(pred['cd']).item()}, {pt.max(pred['cd']).item()},"
-                  f" {pt.mean(pred['cd']).item()}")
+                  f" {pt.mean(pred['cd']).item()}\n")
             failed += 1
 
         # if all the trajectories are invalid, abort training in order to avoid getting stuck in while-loop forever
@@ -538,6 +537,51 @@ def fill_buffer_from_models(env_model_cl_p: list, env_model_cd: list, episode: i
             counter = buffer_size
 
     return predictions
+
+
+def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: int, n_states: int, buffer: int,
+                                     n_models: int, n_time_steps: int = 30, e_re_train: int = 250,
+                                     e_re_train_cd: int = 250, load: bool = False) -> Tuple[list, list, list, dict]:
+    """
+    wrapper function for train the ensemble of environment models
+
+    :param train_path: path to the directory where the training is currently running
+    :param cfd_obs: list containing the file names with all episodes run in CFD so far
+    :param len_traj: length of the trajectories
+    :param n_states: number of probes places in the flow field
+    :param buffer: buffer size
+    :param n_models: number of environment models in the ensemble
+    :param n_time_steps: number as input time steps for the environment models
+    :param e_re_train:number of episodes for re-training the cl-p-models if no valid trajectories could be generated
+    :param e_re_train_cd: number of episodes for re-training the cd-models if no valid trajectories could be generated
+    :param load: flag if 1st model in ensemble is trained from scratch or if previous model is used as initialization
+    :return: list with:
+            [trained cl-p-ensemble, trained cd-ensemble, train- and validation losses, loaded trajectories from CFD]
+    """
+    cl_p_ensemble, cd_ensemble = [], []
+    obs = split_data(cfd_obs, len_traj=len_traj, n_probes=n_states, buffer_size=buffer, n_e_cfd=len(cfd_obs))
+
+    # train 1st model in 1st episode in ensemble with 5000 epochs, for e > 0: re-train previous models with 500 epochs
+    if not load:
+        env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states, observations=obs,
+                                                              load=load, model_no=0)
+    else:
+        env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states, observations=obs,
+                                                              load=True, model_no=0, epochs=500, epochs_cd=500)
+
+    # start filling the model ensemble "buffer"
+    cl_p_ensemble.append(env_model_cl_p.eval())
+    cd_ensemble.append(env_model_cd.eval())
+
+    for model in range(1, n_models):
+        # train each new model in the ensemble initialized with the 1st model trained above with 250 epochs
+        env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states, observations=obs,
+                                                              epochs=e_re_train, epochs_cd=e_re_train_cd, load=True,
+                                                              model_no=model)
+        cl_p_ensemble.append(env_model_cl_p.eval())
+        cd_ensemble.append(env_model_cd.eval())
+
+    return cl_p_ensemble, cd_ensemble, loss, obs
 
 
 # since no model buffer is implemented at the moment, there is no access to the save_obs() method... so just do it here
