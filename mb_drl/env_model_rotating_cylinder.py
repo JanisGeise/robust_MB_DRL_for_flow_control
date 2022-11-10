@@ -315,8 +315,13 @@ def split_data(files: list, len_traj: int, n_probes: int, n_train: float = 0.65,
 
     # randomly select indices of trajectories
     samples = pt.ones(actions.shape[-1])
-    idx_train = pt.multinomial(samples, n_train)
-    idx_val = pt.multinomial(samples, n_val)
+    try:
+        idx_train = pt.multinomial(samples, n_train)
+        idx_val = pt.multinomial(samples, n_val)
+    except RuntimeError as e:
+        print(f"[env_rotating_cylinder.py]: {e}, only one CFD trajectory left, can't be split into training and"
+              f"validation data...\n Aborting training!")
+        exit(0)
 
     # assign train-, validation and testing data based on chosen indices
     data["actions_train"], data["actions_val"] = actions[:, idx_train], actions[:, idx_val]

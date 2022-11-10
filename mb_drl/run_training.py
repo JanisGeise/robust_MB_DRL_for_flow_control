@@ -79,8 +79,10 @@ def main(args):
     if hasattr(args, "debug"):
         args.set_openfoam_bashrc(path=env.path)
         n_input_time_steps = args.n_input_time_steps
+        debug = args.debug
     else:
         n_input_time_steps = 30
+        debug = False
 
     # create buffer
     if executer == "local":
@@ -114,7 +116,13 @@ def main(args):
     start_time = time()
     for e in range(episodes):
         print(f"Start of episode {e}")
-        # TO_DO: outsource everything into classes / fct etc. -> adopt style of drlfoam code...
+
+        # for debugging -> if episode of crash reached: pause execution in order to set breakpoints (so debugger can run
+        # without breakpoints / supervisions up to this point)
+        if debug:
+            if e == args.crashed_in_e:
+                _ = input(f"reached episode {e} (= episode where training crashes) - set breakpoints!")
+
         # every 5th episode sample from CFD
         if e == 0 or e % 5 == 0:
             # save path of CFD episodes -> models should be trained with all CFD data available
@@ -248,7 +256,7 @@ class RunTrainingInDebugger:
     """
 
     def __init__(self, episodes: int = 2, runners: int = 2, buffer: int = 2, finish: float = 5.0,
-                 n_input_time_steps: int = 30, seed: int = 0, timeout: int = 1e15,
+                 n_input_time_steps: int = 30, seed: int = 0, timeout: int = 1e15, crashed_in_e: int = 5,
                  out_dir: str = "examples/TEST_for_debugging"):
         self.command = ". /usr/lib/openfoam/openfoam2206/etc/bashrc"
         self.output = out_dir
@@ -261,6 +269,7 @@ class RunTrainingInDebugger:
         self.n_input_time_steps = n_input_time_steps
         self.seed = seed
         self.timeout = timeout
+        self.crashed_in_e = crashed_in_e
 
     def set_openfoam_bashrc(self, path: str):
         system(f"sed -i '5i # source bashrc for openFOAM for debugging purposes\\n{self.command}' {path}/Allrun.pre")
@@ -292,8 +301,8 @@ if __name__ == "__main__":
         chdir(BASE_PATH)
 
         # test MB-DRL
-        d_args = RunTrainingInDebugger(episodes=10, runners=2, buffer=2, finish=5, n_input_time_steps=30,
-                                       out_dir="examples/TEST")
+        d_args = RunTrainingInDebugger(episodes=60, runners=10, buffer=10, finish=5, n_input_time_steps=30, seed=2,
+                                       out_dir="examples/TEST", crashed_in_e=55)
         assert d_args.finish > 4, "finish time needs to be > 4s, (the first 4sec are uncontrolled)"
 
         # run PPO training

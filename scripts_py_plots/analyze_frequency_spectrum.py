@@ -147,7 +147,7 @@ def analyze_frequencies_final_result(settings: dict, uncontrolled_case: Union[di
                 else:
                     ax[i].plot(f_cd[case], a_cd[case], color=settings["color"][case-1], label=settings["legend"][case-1])
                 ax[i].set_xlabel("$f(c_d)$ $\quad[Hz]$", usetex=True, fontsize=13)
-                ax[i].set_ylabel("$PDS(c_d)$ $\quad[-]$", usetex=True, fontsize=13)
+                ax[i].set_ylabel("$PSD(c_d)$ $\quad[-]$", usetex=True, fontsize=13)
                 ax[i].set_xlim(0, 8)
             elif i == 1:
                 if case == 0:
@@ -155,7 +155,7 @@ def analyze_frequencies_final_result(settings: dict, uncontrolled_case: Union[di
                 else:
                     ax[i].plot(f_cl[case], a_cl[case], color=settings["color"][case-1])
                 ax[i].set_xlabel("$f(c_l)$ $\quad[Hz]$", usetex=True, fontsize=13)
-                ax[i].set_ylabel("$PDS(c_l)$ $\quad[-]$", usetex=True, fontsize=13)
+                ax[i].set_ylabel("$PSD(c_l)$ $\quad[-]$", usetex=True, fontsize=13)
                 ax[i].set_xlim(0, 8)
             else:
                 if case == 0:
@@ -163,7 +163,7 @@ def analyze_frequencies_final_result(settings: dict, uncontrolled_case: Union[di
                 else:
                     ax[i].plot(f_w[case], a_w[case], color=settings["color"][case-1])
                 ax[i].set_xlabel("$f(\omega)$ $\quad[Hz]$", usetex=True, fontsize=13)
-                ax[i].set_ylabel("$PDS(\omega)$ $\quad[-]$", usetex=True, fontsize=13)
+                ax[i].set_ylabel("$PSD(\omega)$ $\quad[-]$", usetex=True, fontsize=13)
                 ax[i].set_xlim(0, 20)
 
     fig.tight_layout()
@@ -191,7 +191,7 @@ def analyze_frequencies_final_result(settings: dict, uncontrolled_case: Union[di
     ax.set_xlim(0, 20)
     ax.set_ylim(0, 1)
     ax.set_xlabel("$f(\omega)$ $\quad[Hz]$", usetex=True, fontsize=13)
-    ax.set_ylabel("$PDS(\omega)$ $\quad[-]$", usetex=True, fontsize=13)
+    ax.set_ylabel("$PSD(\omega)$ $\quad[-]$", usetex=True, fontsize=13)
     fig.tight_layout()
     plt.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=1)
     plt.savefig("".join([settings["main_load_path"], settings["path_controlled"], f"/plots/freq_analysis_cmp.png"]),
@@ -262,7 +262,7 @@ def analyze_frequencies_probes_final_result(settings: dict, uncontrolled_case: U
                 ax[case].set_title(settings["legend"][case - 1])
         ax[case].set_xlim(0, 8)
         ax[case].set_xlabel("$f(p_i)$ $\quad[Hz]$", usetex=True, fontsize=13)
-        ax[case].set_ylabel("$PDS(p_i)$ $\quad[-]$", usetex=True, fontsize=13)
+        ax[case].set_ylabel("$PSD(p_i)$ $\quad[-]$", usetex=True, fontsize=13)
     ax[-1].legend(loc="upper right", framealpha=1.0, fontsize=10)
     fig.tight_layout()
     plt.savefig("".join([settings["main_load_path"], settings["path_controlled"], f"/plots/freq_analysis_probes.png"]),
