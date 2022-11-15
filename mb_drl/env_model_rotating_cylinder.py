@@ -34,12 +34,13 @@ class FCModel(pt.nn.Module):
 
         # input layer to first hidden layer
         self.layers.append(pt.nn.Linear(self.n_inputs, self.n_neurons))
+        self.layers.append(pt.nn.BatchNorm1d(num_features=self.n_neurons))
 
         # add more hidden layers if specified
         if self.n_layers > 1:
             for hidden in range(self.n_layers - 1):
-                self.layers.append(pt.nn.Linear(
-                    self.n_neurons, self.n_neurons))
+                self.layers.append(pt.nn.Linear(self.n_neurons, self.n_neurons))
+                self.layers.append(pt.nn.BatchNorm1d(num_features=self.n_neurons))
 
         # last hidden layer to output layer
         self.layers.append(pt.nn.Linear(self.n_neurons, self.n_outputs))
@@ -87,7 +88,7 @@ def create_label_feature_pairs(t_idx: int, idx_trajectory: Union[pt.Tensor, int]
 
 def train_model(model: pt.nn.Module, state_train: pt.Tensor, action_train: pt.Tensor, state_val: pt.Tensor,
                 action_val: pt.Tensor, cl_train: pt.Tensor, cd_train: pt.Tensor, cl_val: pt.Tensor, cd_val: pt.Tensor,
-                epochs: int = 10000, lr: float = 0.0005, batch_size: int = 50, n_time_steps: int = 3,
+                epochs: int = 10000, lr: float = 0.001, max_batch_size: int = 25, n_time_steps: int = 30,
                 save_model: bool = True, save_name: str = "bestModel", save_dir: str = "env_model",
                 cd_model: bool = False) -> Tuple[list, list]:
     """
@@ -104,7 +105,7 @@ def train_model(model: pt.nn.Module, state_train: pt.Tensor, action_train: pt.Te
     :param cl_val: cl values for validation
     :param epochs: number of epochs for training
     :param lr: learning rate
-    :param batch_size: batch size
+    :param max_batch_size: maximum batch size
     :param n_time_steps: number of input time steps
     :param save_model: option to save best model, default is True
     :param save_dir: path to directory where models should be saved
@@ -117,7 +118,7 @@ def train_model(model: pt.nn.Module, state_train: pt.Tensor, action_train: pt.Te
     if not os.path.exists(save_dir):
         os.mkdir(save_dir)
     criterion = pt.nn.MSELoss()
-    optimizer = pt.optim.AdamW(params=model.parameters(), lr=lr, weight_decay=1e-2)
+    optimizer = pt.optim.AdamW(params=model.parameters(), lr=lr, weight_decay=1e-3)
     pt.autograd.set_detect_anomaly(True)
 
     # allocate some tensors for feature-label selection and losses
@@ -127,40 +128,42 @@ def train_model(model: pt.nn.Module, state_train: pt.Tensor, action_train: pt.Te
     samples_t_start = pt.ones(state_train.shape[0] - n_time_steps)
 
     for epoch in range(epochs):
+        # in each epoch use random batch size between 5 and max_batch_size
+        batch_size = pt.randint(5, max_batch_size, size=(1, 1)).item()
+
         # randomly select a trajectory and starting points wrt the selected batch size out of the data sets
         idx_train, idx_val = pt.multinomial(samples_train, 1), pt.multinomial(samples_val, 1)
         t_start_idx = pt.multinomial(samples_t_start, batch_size)
         traj_train, traj_val = state_train[:, :, idx_train], state_val[:, :, idx_val]
 
-        # train model
-        batch_loss = pt.zeros(batch_size)
+        feature, label = pt.zeros((batch_size, model.layers[0].in_features)),\
+                         pt.zeros((batch_size, model.layers[-1].out_features))
+
         for b in range(batch_size):
-            model.train()
-            optimizer.zero_grad()
-
             # create pairs with feature and corresponding label
-            feature, label = create_label_feature_pairs(t_start_idx[b].item(), idx_train, n_time_steps, traj_train,
-                                                        cl_train, cd_train, action_train, cd_model)
+            feature[b, :], label[b, :] = create_label_feature_pairs(t_start_idx[b].item(), idx_train, n_time_steps,
+                                                                    traj_train, cl_train, cd_train, action_train,
+                                                                    cd_model)
 
-            # get prediction and loss based on n time steps for next state
-            prediction = model(feature).squeeze()
-            loss_train = criterion(prediction, label)
-            loss_train.backward()
-            optimizer.step()
-            batch_loss[b] = loss_train.item()
+        # train model
+        model.train()
+        optimizer.zero_grad()
 
-        training_loss.append(pt.mean(batch_loss).item())
+        # get prediction and loss based on n time steps for next state
+        prediction = model(feature).squeeze()
+        loss_train = criterion(prediction, label.squeeze())
+        loss_train.backward()
+        optimizer.step()
+        training_loss.append(loss_train.item())
 
         # validation loop
         with pt.no_grad():
             for b in range(batch_size):
-                feature, label = create_label_feature_pairs(t_start_idx[b].item(), idx_val, n_time_steps, traj_val,
-                                                            cl_val, cd_val, action_val, cd_model)
-                prediction = model(feature).squeeze()
-                loss_val = criterion(prediction, label)
-                batch_loss[b] = loss_val.item()
-
-        validation_loss.append(pt.mean(batch_loss).item())
+                feature[b, :], label[b, :] = create_label_feature_pairs(t_start_idx[b].item(), idx_val, n_time_steps,
+                                                                        traj_val, cl_val, cd_val, action_val, cd_model)
+            prediction = model(feature).squeeze()
+            loss_val = criterion(prediction, label.squeeze())
+            validation_loss.append(pt.mean(loss_val).item())
 
         if save_model:
             if training_loss[-1] < best_train_loss:
@@ -220,7 +223,7 @@ def load_trajectory_data(files: list, len_traj: int, n_probes: int):
     # sort the trajectories from all workers, for training the models, it doesn't matter from which episodes the data is
     shape, n_col = (len_traj, len(observations) * len(observations[0])), 0
     states = pt.zeros((shape[0], n_probes, shape[1]))
-    actions, cl, cd, alpha, beta, rewards = pt.zeros(shape), pt.zeros(shape), pt.zeros(shape), pt.zeros(shape),\
+    actions, cl, cd, alpha, beta, rewards = pt.zeros(shape), pt.zeros(shape), pt.zeros(shape), pt.zeros(shape), \
                                             pt.zeros(shape), pt.zeros(shape)
 
     for observation in range(len(observations)):
@@ -283,9 +286,9 @@ def split_data(files: list, len_traj: int, n_probes: int, n_train: float = 0.65,
                                                                                                          n_probes)
 
         # merge into existing data
-        cl, cd, actions, states = pt.concat([cl, cl_tmp], dim=1), pt.concat([cd, cd_tmp], dim=1),\
+        cl, cd, actions, states = pt.concat([cl, cl_tmp], dim=1), pt.concat([cd, cd_tmp], dim=1), \
                                   pt.concat([actions, actions_tmp], dim=1), pt.concat([states, states_tmp], dim=2)
-        alpha, beta, rewards = pt.concat([alpha, alpha_tmp], dim=1), pt.concat([beta, beta_tmp], dim=1),\
+        alpha, beta, rewards = pt.concat([alpha, alpha_tmp], dim=1), pt.concat([beta, beta_tmp], dim=1), \
                                pt.concat([rewards, rewards_tmp], dim=1)
 
         # and finally update the masks to remove non-converged trajectories
@@ -332,10 +335,36 @@ def split_data(files: list, len_traj: int, n_probes: int, n_train: float = 0.65,
     return data
 
 
+def check_trajectories(cl: pt.Tensor, cd: pt.Tensor, actions: pt.Tensor, alpha: pt.Tensor, beta: pt.Tensor) -> Tuple:
+    """
+    check the model-generated trajectories wrt realistic values or nan's
+
+    :param cl: trajectory of cl
+    :param cd: trajectory of cd
+    :param actions: trajectory of actions
+    :param alpha: trajectory of alpha
+    :param beta: trajectory of beta
+    :return: status if trajectory is valid or not and which parameter caused the issue as tuple: (status, param)
+    """
+    status = (True, None)
+    if (pt.max(cl.abs()).item() > 1.15) or (pt.isnan(cl).any().item()):
+        status = (False, "cl")
+    elif (pt.max(cd).item() > 3.5) or (pt.min(cd).item() < 2.9) or (pt.isnan(cd).any().item()):
+        status = (False, "cd")
+    elif (pt.max(actions.abs()).item() > 5.0) or (pt.isnan(actions).any().item()):
+        status = (False, "actions")
+    elif (pt.max(alpha.abs()).item() > 1e3) or (pt.isnan(alpha).any().item()):
+        status = (False, "alpha")
+    elif (pt.max(beta.abs()).item() > 1e3) or (pt.isnan(beta).any().item()):
+        status = (False, "beta")
+
+    return status
+
+
 def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
                          path: str, states: pt.Tensor, cd: pt.Tensor, cl: pt.Tensor, actions: pt.Tensor,
                          alpha: pt.Tensor, beta: pt.Tensor, n_probes: int, n_input_steps: int, min_max: dict,
-                         len_trajectory: int = 400) -> dict and bool:
+                         len_trajectory: int = 400) -> dict and Tuple:
     """
     predict a trajectory based on a given initial state and action using trained environment models for cd, and cl-p
 
@@ -353,7 +382,8 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
     :param n_input_steps: number as input time steps for the environment models
     :param min_max: the min- / max-values used for scaling the trajectories to the intervall [0, 1]
     :param len_trajectory: length of the trajectory, 1sec CFD = 100 epochs
-    :return: the predicted trajectory and a staus if the generated trajectory is within realistic bounds
+    :return: the predicted trajectory and a tuple containing the status if the generated trajectory is within realistic
+             bounds, and if status = False which parameter is out of bounds
     """
 
     # test model: loop over all test data and predict the trajectories based on given initial state and actions
@@ -365,61 +395,70 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
     # load current policy network (saved at the end of the previous episode)
     policy_model = (pickle.load(open(path + f"/policy_{episode - 1}.pkl", "rb"))).eval()
 
-    # allocate tensor for predicted states, cl, cd and actions for the whole trajectory, fill in the first N states
-    traj_cd, traj_cl, traj_actions = pt.zeros(len_trajectory), pt.zeros(len_trajectory), pt.zeros(len_trajectory)
-    traj_alpha, traj_beta = pt.zeros(len_trajectory), pt.zeros(len_trajectory)
-    traj_p = pt.zeros(len_trajectory, n_probes)
-    traj_cd[:n_input_steps], traj_cl[:n_input_steps], traj_actions[:n_input_steps] = cd, cl, actions
-    traj_alpha[:n_input_steps], traj_beta[:n_input_steps], traj_p[:n_input_steps, :] = alpha, beta, states
+    # use batch for prediction, because batch normalization only works for batch size > 1
+    # -> at least 2 trajectories required
+    shape = (2, len_trajectory)
+    traj_cd, traj_cl, traj_alpha, traj_beta, traj_actions, traj_p = pt.zeros(shape), pt.zeros(shape), pt.zeros(shape),\
+                                                                    pt.zeros(shape), pt.zeros(shape), \
+                                                                    pt.zeros((2, len_trajectory, n_probes))
+    for i in range(2):
+        traj_cd[i, :n_input_steps] = cd
+        traj_cl[i, :n_input_steps] = cl
+        traj_alpha[i, :n_input_steps] = alpha
+        traj_beta[i, :n_input_steps] = beta
+        traj_actions[i, :n_input_steps] = actions
+        traj_p[i, :n_input_steps, :] = states
 
     # loop over the trajectory, each iteration move input window by one time step
     for t in range(len_trajectory - n_input_steps):
         # create the feature (same for both environment models)
-        feature = pt.flatten(pt.concat([traj_p[t:t + n_input_steps, :],
-                                        (traj_cl[t:t + n_input_steps]).reshape([n_input_steps, 1]),
-                                        traj_cd[t:t + n_input_steps].reshape([n_input_steps, 1]),
-                                        (traj_actions[t:t + n_input_steps]).reshape([n_input_steps, 1])], dim=1))
+        feature = pt.flatten(pt.concat([traj_p[:, t:t + n_input_steps, :],
+                                        (traj_cl[:, t:t + n_input_steps]).reshape([2, n_input_steps, 1]),
+                                        traj_cd[:, t:t + n_input_steps].reshape([2, n_input_steps, 1]),
+                                        (traj_actions[:, t:t + n_input_steps]).reshape([2, n_input_steps, 1])], dim=2),
+                             start_dim=1)
 
         # randomly choose an environment model to make a prediction
         tmp_cd_model = env_model_cd[pt.randint(low=0, high=len(env_model_cl_p), size=(1, 1)).item()]
         tmp_cl_p_model = env_model_cl_p[pt.randint(low=0, high=len(env_model_cl_p), size=(1, 1)).item()]
 
         # make prediction for cd
-        traj_cd[t + n_input_steps] = tmp_cd_model(feature).squeeze().detach()
+        traj_cd[:, t + n_input_steps] = tmp_cd_model(feature).squeeze().detach()
 
         # make prediction for probes and cl
         prediction_cl_p = tmp_cl_p_model(feature).squeeze().detach()
-        traj_p[t + n_input_steps, :] = prediction_cl_p[:n_probes].reshape((1, n_probes))
-        traj_cl[t + n_input_steps] = prediction_cl_p[-1]
+        traj_p[:, t + n_input_steps, :] = prediction_cl_p[:, :n_probes]
+        traj_cl[:, t + n_input_steps] = prediction_cl_p[:, -1]
 
         # use predicted (new) state to get an action for both environment models as new input
         # note: the policy network uses the real states as input (not normalized to [0, 1])
-        s_real = denormalize_data(traj_p[t+n_input_steps, :], min_max["states"])
-        traj_alpha[t + n_input_steps], traj_beta[t + n_input_steps] = policy_model(s_real).squeeze().detach()
+        s_real = denormalize_data(traj_p[:, t + n_input_steps, :], min_max["states"])
+        tmp_pred = policy_model(s_real).squeeze().detach()
+        traj_alpha[:, t + n_input_steps], traj_beta[:, t + n_input_steps] = tmp_pred[:, 0], tmp_pred[:, 1]
 
-        # calculate the expectation for omega (action)
-        traj_actions[t + n_input_steps] = traj_alpha[t + n_input_steps] / (traj_alpha[t + n_input_steps] +
-                                                                           traj_beta[t + n_input_steps])
-
+        # calculate the expectation for omega (action_normalized = alpha / (alpha / beta))
+        traj_actions[:, t + n_input_steps] = traj_alpha[:, t + n_input_steps] / (traj_alpha[:, t + n_input_steps] +
+                                                                                 traj_beta[:, t + n_input_steps])
     # re-scale everything for PPO-training and sort into dict
     cl_rescaled = denormalize_data(traj_cl, min_max["cl"])
     cd_rescaled = denormalize_data(traj_cd, min_max["cd"])
-    output = {"states": denormalize_data(traj_p, min_max["states"]), "cl": cl_rescaled, "cd": cd_rescaled,
-              "actions": denormalize_data(traj_actions, min_max["actions"]), "alpha": traj_alpha,
-              "beta": traj_beta, "rewards": 3.0 - (cd_rescaled + 0.1 * cl_rescaled.abs()), "generated_by": "env_models"}
+    act_rescaled = denormalize_data(traj_actions, min_max["actions"])[0, :]
 
     # sanity check if the created trajectories make sense
-    status = True
-    if (pt.max(cl_rescaled).item() > 1.15) or (pt.max(cl_rescaled).item() < -1.1)\
-            or (pt.max(cd_rescaled).item() > 3.5) or (pt.max(cd_rescaled).item() < 2.9):
-        status = False
+    status = check_trajectories(cl=cl_rescaled, cd=cd_rescaled, actions=act_rescaled, alpha=traj_alpha[0, :],
+                                beta=traj_beta[0, :])
+
+    # all trajectories in batch are the same, so just take the first one
+    output = {"states": denormalize_data(traj_p, min_max["states"])[0, :, :], "cl": cl_rescaled[0, :],
+              "cd": cd_rescaled[0, :], "alpha": traj_alpha[0, :], "beta": traj_beta[0, :], "actions": act_rescaled,
+              "generated_by": "env_models", "rewards": 3.0 - (cd_rescaled[0, :] + 0.1 * cl_rescaled[0, :].abs())}
 
     return output, status
 
 
-def train_env_models(path: str, n_t_input: int, n_probes: int, observations: dict, n_neurons: int = 50,
-                     n_layers: int = 3, n_neurons_cd: int = 50, n_layers_cd: int = 5, batch_size: int = 25,
-                     epochs: int = 5000, epochs_cd: int = 5000, load: bool = False,
+def train_env_models(path: str, n_t_input: int, n_probes: int, observations: dict, n_neurons: int = 100,
+                     n_layers: int = 5, n_neurons_cd: int = 50, n_layers_cd: int = 5, batch_size: int = 25,
+                     epochs: int = 10000, epochs_cd: int = 10000, load: bool = False,
                      model_no: int = 0) -> FCModel and FCModel and list:
     """
     initializes two environment models, trains and validates them based on the sampled data from the CFD
@@ -433,7 +472,7 @@ def train_env_models(path: str, n_t_input: int, n_probes: int, observations: dic
     :param n_layers: number of hidden layers for the cl-p-environment model
     :param n_neurons_cd: number of neurons per layer for the cd-environment model
     :param n_layers_cd: number of hidden layers for the cd-environment model
-    :param batch_size: batch size
+    :param batch_size: maximum batch size
     :param epochs: number of epochs for training the cl-p-environment model
     :param epochs_cd: number of epochs for training the cd-environment model
     :param load: flag if models of last episodes should be used as initialization
@@ -463,18 +502,37 @@ def train_env_models(path: str, n_t_input: int, n_probes: int, observations: dic
                                        observations["states_val"], observations["actions_val"],
                                        observations["cl_train"], observations["cd_train"], observations["cl_val"],
                                        observations["cd_val"], n_time_steps=n_t_input,
-                                       save_dir="".join([path, "/cl_p_model/"]), epochs=epochs, batch_size=batch_size,
-                                       save_name=f"bestModel_no{model_no}")
+                                       save_dir="".join([path, "/cl_p_model/"]), epochs=epochs,
+                                       max_batch_size=batch_size, save_name=f"bestModel_no{model_no}")
 
     print(f"starting training for cd model no. {model_no}")
     train_loss_cd, val_loss_cd = train_model(env_model_cd, observations["states_train"], observations["actions_train"],
                                              observations["states_val"], observations["actions_val"],
                                              observations["cl_train"], observations["cd_train"], observations["cl_val"],
                                              observations["cd_val"], n_time_steps=n_t_input,
-                                             save_name=f"bestModel_no{model_no}", save_dir="".join([path, "/cd_model/"]),
-                                             epochs=epochs_cd, batch_size=batch_size, cd_model=True)
+                                             save_name=f"bestModel_no{model_no}",
+                                             save_dir="".join([path, "/cd_model/"]),
+                                             epochs=epochs_cd, max_batch_size=batch_size, cd_model=True)
 
     return env_model_cl_p, env_model_cd, [[train_loss, train_loss_cd], [val_loss, val_loss_cd]]
+
+
+def print_trajectory_info(no: int, buffer_size: int, i: int, tra: dict, key: str) -> None:
+    """
+    if an invalid trajectory was generated this functions prints info's about the parameter which is out of bounds as
+    well as min-/ max- and mean value of this parameter within the trajectory
+
+    :param no: trajectory number wrt buffer size
+    :param buffer_size: buffer size
+    :param i: number of trails performed to generate the trajectory
+    :param tra: the trajectory
+    :param key: parameter which caused the out-of-bounds issue
+    :return: None
+    """
+    vals = [(k, pt.min(tra[k]).item(), pt.max(tra[k]).item(), pt.mean(tra[k]).item()) for k in tra if k == key]
+    print(f"\ndiscarding trajectory {no + 1}/{buffer_size} due to invalid values [try no. {i}]:")
+    for val in vals:
+        print(f"\tmin / max / mean {val[0]}: {round(val[1], 5)}, {round(val[2], 5)}, {round(val[3], 5)}")
 
 
 def fill_buffer_from_models(env_model_cl_p: list, env_model_cd: list, episode: int, path: str, observation: dict,
@@ -501,7 +559,7 @@ def fill_buffer_from_models(env_model_cl_p: list, env_model_cd: list, episode: i
     min_max = {"states": observation["min_max_states"], "cl": observation["min_max_cl"],
                "cd": observation["min_max_cd"], "actions": observation["min_max_actions"]}
 
-    counter, failed, max_iter = 0, 0, 250
+    counter, failed, max_iter = 0, 0, 50
     while counter < buffer_size:
         print(f"start filling buffer with trajectory {counter + 1}/{buffer_size} using environment models")
 
@@ -520,15 +578,12 @@ def fill_buffer_from_models(env_model_cl_p: list, env_model_cd: list, episode: i
                                         n_probes, n_input, min_max, len_traj)
 
         # only add trajectory to buffer if the values make sense, otherwise discard it
-        if ok:
+        if ok[0]:
             predictions.append(pred)
             counter += 1
+            failed = 0
         else:
-            print(f"discarding trajectory {counter + 1}/{buffer_size} due to invalid values [try no. {failed}]:")
-            print(f"\tmin / max / mean cl: {pt.min(pred['cl']).item()}, {pt.max(pred['cl']).item()},"
-                  f" {pt.mean(pred['cl']).item()}")
-            print(f"\tmin / max / mean cd: {pt.min(pred['cd']).item()}, {pt.max(pred['cd']).item()},"
-                  f" {pt.mean(pred['cd']).item()}\n")
+            print_trajectory_info(counter, buffer_size, failed, pred, ok[1])
             failed += 1
 
         # if all the trajectories are invalid, abort training in order to avoid getting stuck in while-loop forever
@@ -567,7 +622,7 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
                                                               load=load, model_no=0)
     else:
         env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states, observations=obs,
-                                                              load=True, model_no=0, epochs=500, epochs_cd=500)
+                                                              load=True, model_no=0, epochs=1000, epochs_cd=1000)
 
     # start filling the model ensemble "buffer"
     cl_p_ensemble.append(env_model_cl_p.eval())
