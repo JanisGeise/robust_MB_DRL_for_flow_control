@@ -395,7 +395,7 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
 
     # use batch for prediction, because batch normalization only works for batch size > 1
     # -> at least 2 trajectories required
-    batch_size = 25
+    batch_size = 2
     shape = (batch_size, len_trajectory)
     traj_cd, traj_cl, traj_alpha, traj_beta, traj_actions, traj_p = pt.zeros(shape), pt.zeros(shape), pt.zeros(shape),\
                                                                     pt.zeros(shape), pt.zeros(shape), \
@@ -596,7 +596,7 @@ def fill_buffer_from_models(env_model_cl_p: list, env_model_cd: list, episode: i
 
 def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: int, n_states: int, buffer: int,
                                      n_models: int, n_time_steps: int = 30, e_re_train: int = 250,
-                                     e_re_train_cd: int = 250, load: bool = False) -> Tuple[list, list, list, dict]:
+                                     e_re_train_cd: int = 250, load: bool = False) -> Tuple[list, list, pt.Tensor, dict]:
     """
     wrapper function for train the ensemble of environment models
 
@@ -613,7 +613,7 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
     :return: list with:
             [trained cl-p-ensemble, trained cd-ensemble, train- and validation losses, loaded trajectories from CFD]
     """
-    cl_p_ensemble, cd_ensemble = [], []
+    cl_p_ensemble, cd_ensemble, losses = [], [], []
     obs = split_data(cfd_obs, len_traj=len_traj, n_probes=n_states, buffer_size=buffer, n_e_cfd=len(cfd_obs))
 
     # train 1st model in 1st episode in ensemble with 5000 epochs, for e > 0: re-train previous models with 500 epochs
@@ -635,8 +635,9 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
                                                               model_no=model)
         cl_p_ensemble.append(env_model_cl_p.eval())
         cd_ensemble.append(env_model_cd.eval())
+        losses.append(loss)
 
-    return cl_p_ensemble, cd_ensemble, loss, obs
+    return cl_p_ensemble, cd_ensemble, pt.tensor(losses), obs
 
 
 # since no model buffer is implemented at the moment, there is no access to the save_obs() method... so just do it here

@@ -14,6 +14,7 @@ import torch as pt
 
 from glob import glob
 from natsort import natsorted
+from typing import List
 
 
 def load_trajectory_data(path: str) -> dict:
@@ -88,25 +89,26 @@ def load_trajectory_data(path: str) -> dict:
         files = natsorted(glob(path + "env_model_loss_*.pkl"))
         losses = [pickle.load(open(file, "rb")) for file in files]
 
-        shape = (len(losses), losses[0]["val_loss_cd"].size()[0])
+        shape = (len(losses), losses[0]["val_loss_cd"].size()[0], losses[0]["val_loss_cd"].size()[-1])
         cd_train_loss, cd_val_loss = pt.zeros(shape), pt.zeros(shape)
         cl_p_train_loss, cl_p_val_loss = pt.zeros(shape), pt.zeros(shape)
 
         # if early stopping is used -> losses don't have the same shape anymore...
         try:
             for l in range(len(losses)):
-                cd_train_loss[l, :], cd_val_loss[l, :] = losses[l]["train_loss_cd"], losses[l]["train_loss_cl_p"]
-                cl_p_train_loss[l, :], cl_p_val_loss[l, :] = losses[l]["val_loss_cd"], losses[l]["val_loss_cl_p"]
+                cd_train_loss[l, :, :], cd_val_loss[l, :, :] = losses[l]["train_loss_cd"], losses[l]["train_loss_cl_p"]
+                cl_p_train_loss[l, :, :], cl_p_val_loss[l, :, :] = losses[l]["val_loss_cd"], losses[l]["val_loss_cl_p"]
         except RuntimeError:
             pass
 
-        data["train_loss_cd"], data["val_loss_cd"] = cd_train_loss, cd_val_loss
-        data["train_loss_cl_p"], data["val_loss_cl_p"] = cl_p_train_loss, cl_p_val_loss
+        shape = (cd_train_loss.size()[0] * cd_train_loss.size()[1], cd_train_loss.size()[-1])
+        data["train_loss_cd"], data["val_loss_cd"] = cd_train_loss.reshape(shape), cd_val_loss.reshape(shape)
+        data["train_loss_cl_p"], data["val_loss_cl_p"] = cl_p_train_loss.reshape(shape), cl_p_val_loss.reshape(shape)
 
     return data
 
 
-def load_all_data(settings: dict) -> list[dict]:
+def load_all_data(settings: dict) -> List[dict]:
     """
     wrapper function for loading the results of the PPO-training and sorting it wrt episodes
 
@@ -188,10 +190,9 @@ def average_results_for_each_case(data: list) -> dict:
 
         # if environment models are used, get mean and std. of train- and validation losses vs. epoch
         if "train_loss_cd" in data[case]:
-            status = True
             keys_tmp = 2 * ["train_loss_cl_p", "val_loss_cl_p", "train_loss_cd", "val_loss_cd"]
-            tmp_mean = {f"mean_" + k: 0 for k in keys_tmp}
-            tmp_mean.update({f"std_" + k: 0 for k in keys_tmp})
+            tmp_mean = {f"mean_" + k: [] for k in keys_tmp}
+            tmp_mean.update({f"std_" + k: [] for k in keys_tmp})
             for idx, k in enumerate(tmp_mean):
                 if idx < 4:
                     tmp_mean[k] = pt.mean(data[case][keys_tmp[idx]], dim=0)

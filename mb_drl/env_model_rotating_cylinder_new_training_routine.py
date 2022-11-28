@@ -1,7 +1,7 @@
 """
     This script is a version of the 'env_model_rotating_cylinder.py' script using the torch dataloader and other
     functionalities from PyTorch rather than implementing an 'own' (and maybe unconventional) training routine for the
-    environment models from scratch. At this moment, this training routine requires slightly more computationally
+    environment models from scratch. At this moment, this training routine requires slightly more computational
     resources (in terms of run times) and yields worse results wrt the achieved rewards throughout the training.
 
     A major upside of this training may be the higher flexibility and available functionality which comes from using the
@@ -81,7 +81,7 @@ def train_model(model: pt.nn.Module, features_train: pt.Tensor, labels_train: pt
     # optimizer settings
     criterion = pt.nn.MSELoss()
     optimizer = pt.optim.AdamW(params=model.parameters(), lr=lr, weight_decay=1e-3)
-    scheduler = pt.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer, patience=20, min_lr=1.0e-4)
+    scheduler = pt.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer, min_lr=1.0e-4)
 
     # lists for storing losses
     best_val_loss, best_train_loss = 1.0e5, 1.0e5
@@ -131,9 +131,15 @@ def train_model(model: pt.nn.Module, features_train: pt.Tensor, labels_train: pt
             print(f"finished epoch {epoch}, training loss = {round(training_loss[-1].item(), 8)}, "
                   f"validation loss = {round(validation_loss[-1].item(), 8)}")
 
-        # early stopping if model performs well on validation data
-        if validation_loss[-1] <= 1e-5:
-            break
+        # check every 50 epochs if model performs well on validation data or validation loss converges, the 1st 150
+        # epochs completed, because otherwise the loss can't be plotted (if all models have different number of epochs,
+        # it's nt possible to avg...) -> wrt run time, 150 epochs are fine
+        if epoch % 50 == 0 and epoch >= 150:
+            avg_grad_val_loss = (validation_loss[-1] - validation_loss[-50]) / 50
+
+            # since loss decreases the gradient is negative, so if it converges or starts increasing, then stop training
+            if validation_loss[-1] <= 1e-5 or avg_grad_val_loss >= -1e-6:
+                break
 
     return training_loss, validation_loss
 
@@ -281,9 +287,9 @@ def split_data(files: list, len_traj: int, n_probes: int, n_train: float = 0.45,
         idx_train = pt.multinomial(samples, n_train)
         idx_val = pt.multinomial(samples, n_val)
         idx_pred = pt.multinomial(samples, n_pred)
-    except RuntimeError as e:
-        print(f"[env_rotating_cylinder.py]: {e}, only one CFD trajectory left, can't be split into training and"
-              f"validation data...\n Aborting training!")
+    except RuntimeError as rt:
+        print(f"[env_rotating_cylinder.py]: {rt}, only one CFD trajectory left, can't be split into training and"
+              f" validation data...\n Aborting training!")
         exit(0)
 
     # assign train-, validation and testing data based on chosen indices
@@ -318,7 +324,7 @@ def check_trajectories(cl: pt.Tensor, cd: pt.Tensor, actions: pt.Tensor, alpha: 
         status = (False, "actions")
     elif (pt.max(alpha.abs()).item() > 1e3) or (pt.isnan(alpha).any().item()):
         status = (False, "alpha")
-    elif (pt.max(beta.abs()).item() > 1e3) or (pt.isnan(beta).any().item()):
+    elif (pt.max(beta.abs()).item() > 5e3) or (pt.isnan(beta).any().item()):
         status = (False, "beta")
 
     return status
@@ -360,11 +366,12 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
 
     # use batch for prediction, because batch normalization only works for batch size > 1
     # -> at least 2 trajectories required
-    shape = (2, len_trajectory)
+    batch_size = 2
+    shape = (batch_size, len_trajectory)
     traj_cd, traj_cl, traj_alpha, traj_beta, traj_actions, traj_p = pt.zeros(shape), pt.zeros(shape), pt.zeros(shape),\
                                                                     pt.zeros(shape), pt.zeros(shape), \
-                                                                    pt.zeros((2, len_trajectory, n_probes))
-    for i in range(2):
+                                                                    pt.zeros((batch_size, len_trajectory, n_probes))
+    for i in range(batch_size):
         traj_cd[i, :n_input_steps] = cd
         traj_cl[i, :n_input_steps] = cl
         traj_alpha[i, :n_input_steps] = alpha
@@ -376,9 +383,10 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
     for t in range(len_trajectory - n_input_steps):
         # create the feature (same for both environment models)
         feature = pt.flatten(pt.concat([traj_p[:, t:t + n_input_steps, :],
-                                        (traj_cl[:, t:t + n_input_steps]).reshape([2, n_input_steps, 1]),
-                                        traj_cd[:, t:t + n_input_steps].reshape([2, n_input_steps, 1]),
-                                        (traj_actions[:, t:t + n_input_steps]).reshape([2, n_input_steps, 1])], dim=2),
+                                        (traj_cl[:, t:t + n_input_steps]).reshape([batch_size, n_input_steps, 1]),
+                                        traj_cd[:, t:t + n_input_steps].reshape([batch_size, n_input_steps, 1]),
+                                        (traj_actions[:, t:t + n_input_steps]).reshape([batch_size, n_input_steps, 1])],
+                                       dim=2),
                              start_dim=1)
 
         # randomly choose an environment model to make a prediction
@@ -612,8 +620,8 @@ def generate_feature_labels(cd, states: pt.Tensor = None, actions: pt.Tensor = N
 
 
 def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: int, n_states: int, buffer: int,
-                                     n_models: int, n_time_steps: int = 30, e_re_train: int = 250,
-                                     e_re_train_cd: int = 250, load: bool = False) -> Tuple[list, list, list, dict]:
+                                     n_models: int, n_time_steps: int = 30, e_re_train: int = 150,
+                                     e_re_train_cd: int = 150, load: bool = False) -> Tuple[list, list, pt.Tensor, dict]:
     """
     wrapper function for train the ensemble of environment models
 
@@ -630,7 +638,7 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
     :return: list with:
             [trained cl-p-ensemble, trained cd-ensemble, train- and validation losses, loaded trajectories from CFD]
     """
-    cl_p_ensemble, cd_ensemble = [], []
+    cl_p_ensemble, cd_ensemble, losses = [], [], []
     obs = split_data(cfd_obs, len_traj=len_traj, n_probes=n_states, buffer_size=buffer, n_e_cfd=len(cfd_obs))
 
     # create feature-label pairs for all possible input states of given data
@@ -680,8 +688,9 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
                                                               model_no=model)
         cl_p_ensemble.append(env_model_cl_p.eval())
         cd_ensemble.append(env_model_cd.eval())
+        losses.append(loss)
 
-    return cl_p_ensemble, cd_ensemble, loss, init_data
+    return cl_p_ensemble, cd_ensemble, pt.tensor(losses), init_data
 
 
 # since no model buffer is implemented at the moment, there is no access to the save_obs() method... so just do it here
