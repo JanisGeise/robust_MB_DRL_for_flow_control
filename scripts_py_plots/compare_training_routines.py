@@ -268,11 +268,11 @@ def compare_training_methods(settings: dict) -> None:
         if routine == 0:
             res, mf, loss = simulate_ppo_training(settings["main_load_path"] + settings["path_MF_case"],
                                                   original_training_routine, n_models=settings["n_models"],
-                                                  which_e_pred=settings["e_trajectory"], n_episodes=6)
+                                                  which_e_pred=settings["e_trajectory"])
         else:
             res, mf, loss = simulate_ppo_training(settings["main_load_path"] + settings["path_MF_case"],
                                                   new_training_routine, n_models=settings["n_models"],
-                                                  which_e_pred=settings["e_trajectory"], n_episodes=6)
+                                                  which_e_pred=settings["e_trajectory"])
 
         mb.append(res)
 

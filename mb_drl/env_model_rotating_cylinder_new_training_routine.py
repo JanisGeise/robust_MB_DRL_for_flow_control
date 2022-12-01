@@ -5,7 +5,8 @@
     resources (in terms of run times) and yields worse results wrt the achieved rewards throughout the training.
 
     A major upside of this training may be the higher flexibility and available functionality which comes from using the
-    methods available in PyTorch. The worse results at the moment are maybe just a consequence of poor settings etc...
+    methods available in PyTorch. Further, the training routine itself runs much more stable than the training routine
+    implemented in 'env_model_rotating_cylinder.py'.
 
     Note: this file needs to be located in 'drlfoam/drlfoam/environment/' in order to run a training
 """
@@ -90,8 +91,8 @@ def train_model(model: pt.nn.Module, features_train: pt.Tensor, labels_train: pt
     # create dataset & dataloader -> dimensions always: [batch_size, N_features (or N_labels)]
     dataset_train = TensorDataset(features_train, labels_train)
     dataset_val = TensorDataset(features_val, labels_val)
-    dataloader_train = DataLoader(dataset_train, batch_size=batch_size, shuffle=True, drop_last=True)
-    dataloader_val = DataLoader(dataset_val, batch_size=batch_size, shuffle=True, drop_last=True)
+    dataloader_train = DataLoader(dataset_train, batch_size=batch_size, shuffle=True, drop_last=False)
+    dataloader_val = DataLoader(dataset_val, batch_size=batch_size, shuffle=True, drop_last=False)
 
     for epoch in range(1, epochs + 1):
         t_loss_tmp, v_loss_tmp = [], []
@@ -131,11 +132,12 @@ def train_model(model: pt.nn.Module, features_train: pt.Tensor, labels_train: pt
             print(f"finished epoch {epoch}, training loss = {round(training_loss[-1].item(), 8)}, "
                   f"validation loss = {round(validation_loss[-1].item(), 8)}")
 
-        # check every 50 epochs if model performs well on validation data or validation loss converges, the 1st 150
-        # epochs completed, because otherwise the loss can't be plotted (if all models have different number of epochs,
-        # it's nt possible to avg...) -> wrt run time, 150 epochs are fine
+        # check every 50 epochs if model performs well on validation data or validation loss converges. Completing 150
+        # epochs ensures that the loss can be plotted later (if all models have different number of epochs,
+        # it's not possible to avg.) while at the same time not running too many unnecessary epochs
         if epoch % 50 == 0 and epoch >= 150:
-            avg_grad_val_loss = (validation_loss[-1] - validation_loss[-50]) / 50
+            avg_grad_val_loss = (pt.mean(pt.tensor(validation_loss[-5:-1])) -
+                                 pt.mean(pt.tensor(validation_loss[-52:-48]))) / 48
 
             # since loss decreases the gradient is negative, so if it converges or starts increasing, then stop training
             if validation_loss[-1] <= 1e-5 or avg_grad_val_loss >= -1e-6:
@@ -428,8 +430,8 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
 
 
 def train_env_models(path: str, n_t_input: int, n_probes: int, observations: dict, n_neurons: int = 100,
-                     n_layers: int = 3, n_neurons_cd: int = 50, n_layers_cd: int = 5, epochs: int = 7500,
-                     epochs_cd: int = 7500, load: bool = False, model_no: int = 0) -> FCModel and FCModel and list:
+                     n_layers: int = 3, n_neurons_cd: int = 50, n_layers_cd: int = 5, epochs: int = 2500,
+                     epochs_cd: int = 2500, load: bool = False, model_no: int = 0) -> FCModel and FCModel and list:
     """
     initializes two environment models, trains and validates them based on the sampled data from the CFD
     environment. The models are trained and validated using the previous 2 episodes run in the CFD environment
@@ -656,7 +658,7 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
     labels_val_cd = generate_feature_labels(cd=obs["cd_val"], len_traj=len_traj, n_t_input=n_time_steps,
                                             n_probes=n_states, cd_model=True)
 
-    # ...
+    # save observations for PPO-training
     init_data = {"min_max_states": obs["min_max_states"], "min_max_actions": obs["min_max_actions"],
                  "min_max_cl": obs["min_max_cl"], "min_max_cd": obs["min_max_cd"], "alpha": obs["alpha_pred"],
                  "beta": obs["beta_pred"], "cl": obs["cl_pred"], "cd": obs["cd_pred"], "actions": obs["actions_pred"],
