@@ -596,7 +596,9 @@ def fill_buffer_from_models(env_model_cl_p: list, env_model_cd: list, episode: i
 
 def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: int, n_states: int, buffer: int,
                                      n_models: int, n_time_steps: int = 30, e_re_train: int = 250,
-                                     e_re_train_cd: int = 250, load: bool = False) -> Tuple[list, list, pt.Tensor, dict]:
+                                     e_re_train_cd: int = 250, load: bool = False, n_layers_cl_p: int = 3,
+                                     n_layers_cd: int = 5, n_neurons_cl_p: int = 100,
+                                     n_neurons_cd: int = 50) -> Tuple[list, list, pt.Tensor, dict]:
     """
     wrapper function for train the ensemble of environment models
 
@@ -610,6 +612,10 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
     :param e_re_train:number of episodes for re-training the cl-p-models if no valid trajectories could be generated
     :param e_re_train_cd: number of episodes for re-training the cd-models if no valid trajectories could be generated
     :param load: flag if 1st model in ensemble is trained from scratch or if previous model is used as initialization
+    :param n_layers_cl_p: number of neurons per layer for the cl-p-environment model
+    :param n_neurons_cl_p: number of hidden layers for the cl-p-environment model
+    :param n_neurons_cd: number of neurons per layer for the cd-environment model
+    :param n_layers_cd: number of hidden layers for the cd-environment model
     :return: list with:
             [trained cl-p-ensemble, trained cd-ensemble, train- and validation losses, loaded trajectories from CFD]
     """
@@ -619,10 +625,14 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
     # train 1st model in 1st episode in ensemble with 5000 epochs, for e > 0: re-train previous models with 500 epochs
     if not load:
         env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states, observations=obs,
-                                                              load=load, model_no=0)
+                                                              load=load, model_no=0, n_neurons=n_neurons_cl_p,
+                                                              n_layers=n_layers_cl_p, n_neurons_cd=n_neurons_cd,
+                                                              n_layers_cd=n_layers_cd)
     else:
         env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states, observations=obs,
-                                                              load=True, model_no=0, epochs=1000, epochs_cd=1000)
+                                                              load=True, model_no=0, epochs=1000, epochs_cd=1000,
+                                                              n_neurons=n_neurons_cl_p, n_layers=n_layers_cl_p,
+                                                              n_neurons_cd=n_neurons_cd, n_layers_cd=n_layers_cd)
 
     # start filling the model ensemble "buffer"
     cl_p_ensemble.append(env_model_cl_p.eval())
@@ -632,7 +642,9 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
         # train each new model in the ensemble initialized with the 1st model trained above with 250 epochs
         env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states, observations=obs,
                                                               epochs=e_re_train, epochs_cd=e_re_train_cd, load=True,
-                                                              model_no=model)
+                                                              model_no=model, n_neurons=n_neurons_cl_p,
+                                                              n_layers=n_layers_cl_p, n_neurons_cd=n_neurons_cd,
+                                                              n_layers_cd=n_layers_cd)
         cl_p_ensemble.append(env_model_cl_p.eval())
         cd_ensemble.append(env_model_cd.eval())
         losses.append(loss)

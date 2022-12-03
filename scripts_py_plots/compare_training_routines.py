@@ -17,10 +17,10 @@ import pickle
 import matplotlib.pyplot as plt
 
 import torch as pt
-from typing import List, Tuple
 from shutil import rmtree
 from os import path, mkdir
 from torch import manual_seed
+from typing import List, Tuple
 
 from plot_ppo_results import plot_train_validation_loss
 from mb_drl.env_model_rotating_cylinder import denormalize_data, normalize_data
@@ -98,7 +98,7 @@ def plot_cl_cd_vs_prediction(path: str, real_data: dict, predicted_data: List[di
                 else:
                     ax[i].plot(x, predicted_data[j-1]["cd"], color=color[j-1])
                 ax[i].set_ylabel("$drag$ $coefficient$ $\qquad c_d$", usetex=True, fontsize=13)
-                ax[i].set_ylim(3.0, 3.25)
+                ax[i].set_ylim(2.95, 3.25)
             ax[i].set_xlabel("$epoch$ $number$", usetex=True, fontsize=13)
     fig.tight_layout()
     fig.legend(loc="upper right", framealpha=1.0, fontsize=12, ncol=3)
@@ -185,7 +185,9 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, path: str, st
 
 def simulate_ppo_training(load_path: str, wrapper_function, n_episodes: int = 80, len_traj: int = 200,
                           n_models: int = 1, n_states: int = 12, buffer_size: int = 8, n_input_time_steps: int = 30,
-                          which_e_pred: list = None) -> Tuple[List[dict], List[dict], dict]:
+                          which_e_pred: list = None, n_layers_cl_p: int = 3, n_layers_cd: int = 5,
+                          n_neurons_cl_p: int = 100, n_neurons_cd: int = 50,
+                          return_full_buffer: bool = False) -> Tuple[List[dict], List[dict], dict]:
     """
     simulates a PPO-training in order to compare the results of CFD trajectories with the MB-generated trajectories.
     In order obtain comparable results to the full MB-DRL training routine, the complete training process needs to be
@@ -203,6 +205,12 @@ def simulate_ppo_training(load_path: str, wrapper_function, n_episodes: int = 80
     :param buffer_size: buffer size
     :param n_input_time_steps: number of input time steps for the environment models
     :param which_e_pred: which episodes should be predicted by the env. models for comparison with CFD
+    :param n_layers_cl_p: number of neurons per layer for the cl-p-environment model
+    :param n_neurons_cl_p: number of hidden layers for the cl-p-environment model
+    :param n_neurons_cd: number of neurons per layer for the cd-environment model
+    :param n_layers_cd: number of hidden layers for the cd-environment model
+    :param return_full_buffer: flag if 'True': the buffer is filled completely with predicted trajectories,
+                               else only the 1st trajectory og the buffer is returned (predicted as well as CFD)
     :return: predicted trajectories, corresponding MF-trajectories and all losses from all env. models
     """
     if which_e_pred is None:
@@ -220,36 +228,57 @@ def simulate_ppo_training(load_path: str, wrapper_function, n_episodes: int = 80
             # in 1st episode: CFD data is used to train environment models for 1st time
             if e == 0:
                 cl_p_models, cd_models, l, obs = wrapper_function(load_path, obs_cfd, len_traj, n_states, buffer_size,
-                                                                  n_models, n_input_time_steps)
+                                                                  n_models, n_input_time_steps,
+                                                                  n_layers_cl_p=n_layers_cl_p,
+                                                                  n_neurons_cd=n_neurons_cd, n_layers_cd=n_layers_cd,
+                                                                  n_neurons_cl_p=n_neurons_cl_p)
 
             # ever 5th episode: models are loaded and re-trained based on CFD data of the current & last CFD episode
             else:
                 cl_p_models, cd_models, l, obs = wrapper_function(load_path, obs_cfd, len_traj, n_states, buffer_size,
-                                                                  n_models, n_input_time_steps, load=True)
+                                                                  n_models, n_input_time_steps, load=True,
+                                                                  n_layers_cl_p=n_layers_cl_p,
+                                                                  n_neurons_cd=n_neurons_cd, n_layers_cd=n_layers_cd,
+                                                                  n_neurons_cl_p=n_neurons_cl_p)
+
             # size(l) = [N_models-1, train_loss_cl_p, train_loss_cd, val_loss_cl_p, val_loss_cd, n_epochs]
             loss.append(l)
 
         # predict the trajectory based on the actions taken in the CFD environment for selected episodes defined
         if e in which_e_pred:
             cfd_data = pickle.load(open("".join([load_path + f"/observations_{e}.pkl"]), "rb"))
+            pred_tmp = []
 
-            # normalize data, always use the 1st trajectory in obs, since buffer should be >=1
-            states, min_max_states = normalize_data(cfd_data[0]["states"])
-            cd, min_max_cd = normalize_data(cfd_data[0]["cd"])
-            cl, min_max_cl = normalize_data(cfd_data[0]["cl"])
-            actions, min_max_actions = normalize_data(cfd_data[0]["actions"])
+            for b in range(len(cfd_data)):
+                # normalize data, always use the 1st trajectory in obs, since buffer should be >=1
+                states, min_max_states = normalize_data(cfd_data[b]["states"])
+                cd, min_max_cd = normalize_data(cfd_data[b]["cd"])
+                cl, min_max_cl = normalize_data(cfd_data[b]["cl"])
+                actions, min_max_actions = normalize_data(cfd_data[b]["actions"])
 
-            # min- / max-values used for normalization
-            min_max = {"states": min_max_states, "cl": min_max_cl, "cd": min_max_cd, "actions": min_max_actions}
-            pred = predict_trajectories(cl_p_models, cd_models, load_path, states, cd, cl, actions, min_max=min_max,
-                                        n_input_steps=n_input_time_steps, len_trajectory=len_traj, n_probes=n_states)
-            predicted_traj.append(pred)
-            ml_traj.append(cfd_data[0])
+                # min- / max-values used for normalization
+                min_max = {"states": min_max_states, "cl": min_max_cl, "cd": min_max_cd, "actions": min_max_actions}
+                pred = predict_trajectories(cl_p_models, cd_models, load_path, states, cd, cl, actions, min_max=min_max,
+                                            n_input_steps=n_input_time_steps, len_trajectory=len_traj,
+                                            n_probes=n_states)
+                pred_tmp.append(pred)
 
-    losses = {"train_loss_cl_p": pt.cat([loss[i][:, 0, 0, :] for i in range(len(loss))]),
-              "train_loss_cd": pt.cat([loss[i][:, 0, 1, :] for i in range(len(loss))]),
-              "val_loss_cl_p": pt.cat([loss[i][:, 1, 0, :] for i in range(len(loss))]),
-              "val_loss_cd": pt.cat([loss[i][:, 1, 1, :] for i in range(len(loss))])}
+            # depending on the purpose, either return the full buffer, e.g. for network architecture study, or just the
+            # 1st trajectory of each chosen episode, e.g. if trajectories should be compared
+            if return_full_buffer:
+                predicted_traj.append(pred_tmp)
+                ml_traj.append(cfd_data)
+            else:
+                predicted_traj.append(pred_tmp[0])
+                ml_traj.append(cfd_data[0])
+
+    if n_models > 1:
+        losses = {"train_loss_cl_p": pt.cat([loss[i][:, 0, 0, :] for i in range(len(loss))]),
+                  "train_loss_cd": pt.cat([loss[i][:, 0, 1, :] for i in range(len(loss))]),
+                  "val_loss_cl_p": pt.cat([loss[i][:, 1, 0, :] for i in range(len(loss))]),
+                  "val_loss_cd": pt.cat([loss[i][:, 1, 1, :] for i in range(len(loss))])}
+    else:
+        losses = {}
 
     return predicted_traj, ml_traj, losses
 
@@ -268,20 +297,21 @@ def compare_training_methods(settings: dict) -> None:
         if routine == 0:
             res, mf, loss = simulate_ppo_training(settings["main_load_path"] + settings["path_MF_case"],
                                                   original_training_routine, n_models=settings["n_models"],
-                                                  which_e_pred=settings["e_trajectory"])
+                                                  which_e_pred=settings["e_trajectory"], len_traj=settings["len_traj"])
         else:
             res, mf, loss = simulate_ppo_training(settings["main_load_path"] + settings["path_MF_case"],
                                                   new_training_routine, n_models=settings["n_models"],
-                                                  which_e_pred=settings["e_trajectory"])
+                                                  which_e_pred=settings["e_trajectory"], len_traj=settings["len_traj"])
 
         mb.append(res)
 
-        # plot train and validation losses
-        plot_train_validation_loss(settings, pt.mean(loss["train_loss_cl_p"], dim=0),
-                                   pt.mean(loss["val_loss_cl_p"], dim=0), pt.mean(loss["train_loss_cd"], dim=0),
-                                   pt.mean(loss["val_loss_cd"], dim=0), pt.std(loss["train_loss_cl_p"], dim=0),
-                                   pt.std(loss["val_loss_cl_p"], dim=0), pt.std(loss["train_loss_cd"], dim=0),
-                                   pt.std(loss["val_loss_cd"], dim=0), case=routine)
+        if settings["n_models"] > 1:
+            # plot train and validation losses
+            plot_train_validation_loss(settings, pt.mean(loss["train_loss_cl_p"], dim=0),
+                                       pt.mean(loss["val_loss_cl_p"], dim=0), pt.mean(loss["train_loss_cd"], dim=0),
+                                       pt.mean(loss["val_loss_cd"], dim=0), pt.std(loss["train_loss_cl_p"], dim=0),
+                                       pt.std(loss["val_loss_cl_p"], dim=0), pt.std(loss["train_loss_cd"], dim=0),
+                                       pt.std(loss["val_loss_cd"], dim=0), case=routine)
 
     # plot real (CFD) trajectories vs. the predicted ones
     for e in range(len(mf)):
@@ -300,7 +330,8 @@ if __name__ == "__main__":
         "save_path": "run/compare_training_approaches/",
         "e_trajectory": [0, 1, 2, 3, 4, 75, 76, 77, 78, 79],        # for which episodes should a trajectory be compared
         "n_probes": 12,                                             # number of probes placed in flow field
-        "n_models": 3,                                              # number of environment models in the ensembles
+        "n_models": 5,                                              # number of environment models in the ensembles
+        "len_traj": 200,                                            # number of points in trajectory (MF case)
         "color": ["blue", "red", "green", "darkviolet", "black"],   # colors for the cases, uncontrolled = black
         "legend": ["real (MF)", "predicted (MB, original training)", "predicted (MB, new training)"]
     }
@@ -315,5 +346,6 @@ if __name__ == "__main__":
     # compare MB-generated trajectories using the two different training routines
     compare_training_methods(setup)
 
+    # remove temporary directories created for model training
     rmtree("".join([setup["main_load_path"], setup["path_MF_case"], "/cd_model"]))
     rmtree("".join([setup["main_load_path"], setup["path_MF_case"], "/cl_p_model"]))
