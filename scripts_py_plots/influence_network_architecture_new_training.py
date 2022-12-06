@@ -76,7 +76,7 @@ def compute_total_prediction_error(real_traj: List[dict], predicted_traj: List[d
     return all_losses
 
 
-def run_parameter_study(load_path: str, neuron_list: list, layer_list: list, max_e: int = 80, len_traj: int = 200,
+def run_parameter_study(load_path: str, neuron_list: list, layer_list: list, n_episodes: int = 80, len_traj: int = 200,
                         n_models: int = 1, buffer_size: int = 8, run_for_cd_model: bool = False) -> pt.Tensor:
     """
     executes the parameter study for a given list of neurons and layers, computes the prediction losses for each of
@@ -85,7 +85,7 @@ def run_parameter_study(load_path: str, neuron_list: list, layer_list: list, max
     :param load_path: path to the trajectories of the MF-case
     :param neuron_list: list containing all the number of neurons per layer which should be tested
     :param layer_list: list containing all the number of hidden layers which should be tested
-    :param max_e: number of episodes to run, usually the same as number of episodes run in MF-training
+    :param n_episodes: number of episodes to run, usually the same as number of episodes run in MF-training
     :param len_traj: length of the trajectory, 1s = 100 points (if default sampling rate is used in MF-training)
     :param n_models: number of environment models in each ensemble
     :param buffer_size: buffer size
@@ -107,14 +107,15 @@ def run_parameter_study(load_path: str, neuron_list: list, layer_list: list, max
             if run_for_cd_model:
                 predictions, real, _ = simulate_ppo_training(load_path, train_routine, len_traj=len_traj,
                                                              n_models=n_models, buffer_size=buffer_size,
-                                                             which_e_pred=list(range(0, max_e)), n_neurons_cd=neurons,
+                                                             which_e_pred=list(range(0, n_episodes)),
+                                                             n_neurons_cd=neurons, n_episodes=n_episodes,
                                                              n_layers_cd=layers, return_full_buffer=True)
             else:
                 predictions, real, _ = simulate_ppo_training(load_path, train_routine, len_traj=len_traj,
                                                              n_models=n_models, buffer_size=buffer_size,
-                                                             which_e_pred=list(range(0, max_e)),
-                                                             n_neurons_cl_p=neurons, n_layers_cl_p=layers,
-                                                             return_full_buffer=True)
+                                                             which_e_pred=list(range(0, n_episodes)),
+                                                             n_neurons_cl_p=neurons, n_episodes=n_episodes,
+                                                             n_layers_cl_p=layers, return_full_buffer=True)
 
             # calculate L2- and L1-loss for each neuron-layer combination based on predicted trajectories
             losses[n, l, :, :] = compute_total_prediction_error(real, predictions, cd_model=run_for_cd_model)
