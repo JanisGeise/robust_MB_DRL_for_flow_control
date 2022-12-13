@@ -185,8 +185,8 @@ def average_results_for_each_case(data: list) -> dict:
             avg_data["buffer_size"].append(data[case]["n_workers"])
         avg_data["len_traj"].append(int(len_trajectory / 100))
 
-        if "generated_by" in data[case]:
-            avg_data["ratio_MB_MF"].append(data[case]["MB_MF"])
+        if "ratio_MB_MF" in data[case]:
+            avg_data["ratio_MB_MF"].append(data[case]["ratio_MB_MF"])
 
         # if environment models are used, get mean and std. of train- and validation losses vs. epoch
         if "train_loss_cd" in data[case]:
@@ -223,7 +223,7 @@ def merge_results_for_diff_seeds(data: list, n_seeds: int) -> dict:
 
     merged_data = {"n_workers": n_traj, "network_data": [data[seed]["network_data"] for seed in range(len(data))],
                    "n_seeds": n_seeds, "cl": pt.zeros(shape), "cd": pt.zeros(shape), "actions": pt.zeros(shape),
-                   "rewards": pt.zeros(shape), "alpha": pt.zeros(shape), "beta": pt.zeros(shape)}
+                   "rewards": pt.zeros(shape), "alpha": pt.zeros(shape), "beta": pt.zeros(shape), "ratio_MB_MF": []}
     keys = ["cl", "cd", "actions", "rewards", "alpha", "beta"]
 
     for seed in range(n_seeds):
@@ -233,6 +233,11 @@ def merge_results_for_diff_seeds(data: list, n_seeds: int) -> dict:
 
     # sort the states into dict
     merged_data["states"] = states
+
+    # get the ration of MB / MF episodes
+    for i in range(len(data)):
+        if "MB_MF" in data[i]:
+            merged_data["ratio_MB_MF"].append(data[i]["MB_MF"])
 
     return merged_data
 
