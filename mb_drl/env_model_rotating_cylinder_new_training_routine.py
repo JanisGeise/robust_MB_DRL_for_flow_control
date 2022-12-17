@@ -57,6 +57,71 @@ class FCModel(pt.nn.Module):
         return self.layers[-1](x)
 
 
+class EnvModel(pt.nn.Module):
+    def __init__(self, n_states: int, n_cl: int, n_actions: int, n_out: int = 1, n_neurons_action: int = 50,
+                 n_layers_actions: int = 3, n_neurons_cl_p: int = 50, n_layers_cl_p: int = 2):
+        """
+        This class is similar to the FCModel class, but in contrast this is not a fully connected model. In this class,
+        the feature is split into two separate models (internally) in order to control the weighing of the input
+        parameters wrt to the output since the number of probes is dominating wrt to the number of actions
+
+        Note: this class is a (slightly) modified version of a class provided by my supervisor Andre Weiner
+        (https://github.com/AndreWeiner)
+
+        :param n_states: N probes
+        :param n_cl: N cl values
+        :param n_actions: N actions
+        :param n_out: activation function
+        :return: None
+        """
+        super(EnvModel, self).__init__()
+        self._state_net = create_simple_network(n_input=n_states + n_cl, n_output=n_states + n_cl,
+                                                n_neurons=n_neurons_cl_p, n_layers=n_layers_cl_p, activation=pt.nn.ReLU)
+        # TODO: 2*n_actions bc otherwise dim mismatch error?!
+        self._action_net = create_simple_network(n_input=2*n_actions, n_output=n_actions, n_neurons=n_neurons_action,
+                                                 n_layers=n_layers_actions, activation=pt.nn.ReLU)
+        self._head = create_simple_network(n_actions + n_states + n_cl, n_out, n_neurons=100, n_layers=2,
+                                           activation=pt.nn.ReLU)
+        self._n_states = n_states
+        self._n_cl = n_cl
+        self._n_actions = n_actions
+        self._n_target = n_out
+
+    def forward(self, x):
+        """
+        connects the output of the two models and feed it into the subsequent model
+
+        :param x: model input (feature)
+        :return: model output (final output)
+        """
+        # assumptions: columns of x contain first all states and then all actions
+        x_state = x[:, :self._n_states+self._n_cl]
+        x_action = x[:, self._n_states+self._n_cl:]
+        x_head = pt.cat((self._state_net(x_state), self._action_net(x_action)), dim=1)
+        return self._head(x_head)
+
+
+def create_simple_network(n_input: int, n_output: int, n_neurons: int, n_layers: int,
+                          activation: callable) -> pt.nn.Sequential:
+    """
+    Note: this function was provided by my supervisor Andre Weiner (https://github.com/AndreWeiner)
+
+    :param n_input:
+    :param n_output:
+    :param n_neurons:
+    :param n_layers:
+    :param activation:
+    :return:
+    """
+    layers = [pt.nn.Linear(n_input, n_neurons), activation()]
+    for _ in range(n_layers):
+        layers.append(pt.nn.Linear(n_neurons, n_neurons))
+        layers.append(activation())
+        layers.append(pt.nn.LayerNorm(n_neurons))
+    layers.append(pt.nn.Linear(n_neurons, n_output))
+    return pt.nn.Sequential(*layers)
+
+
 def train_model(model: pt.nn.Module, features_train: pt.Tensor, labels_train: pt.Tensor, features_val: pt.Tensor,
                 labels_val: pt.Tensor, epochs: int = 5000, lr: float = 0.01, batch_size: int = 25,
                 save_model: bool = True, save_name: str = "bestModel", save_dir: str = "env_model") -> Tuple[list, list]:
@@ -146,15 +211,17 @@ def train_model(model: pt.nn.Module, features_train: pt.Tensor, labels_train: pt
     return training_loss, validation_loss
 
 
-def normalize_data(x: pt.Tensor) -> Tuple[pt.Tensor, list]:
+def normalize_data(x: pt.Tensor, x_min_max: list = None) -> Tuple[pt.Tensor, list]:
     """
     normalize data to the interval [0, 1] using a min-max-normalization
 
     :param x: data which should be normalized
+    :param x_min_max: list containing the min-max-values for normalization (optional)
     :return: tensor with normalized data and corresponding (global) min- and max-values used for normalization
     """
     # x_i_normalized = (x_i - x_min) / (x_max - x_min)
-    x_min_max = [pt.min(x), pt.max(x)]
+    if x_min_max is None:
+        x_min_max = [pt.min(x), pt.max(x)]
     return pt.sub(x, x_min_max[0]) / (x_min_max[1] - x_min_max[0]), x_min_max
 
 
@@ -318,13 +385,13 @@ def check_trajectories(cl: pt.Tensor, cd: pt.Tensor, actions: pt.Tensor, alpha: 
     :return: status if trajectory is valid or not and which parameter caused the issue as tuple: (status, param)
     """
     status = (True, None)
-    if (pt.max(cl.abs()).item() > 1.15) or (pt.isnan(cl).any().item()):
+    if (pt.max(cl.abs()).item() > 1.3) or (pt.isnan(cl).any().item()):
         status = (False, "cl")
-    elif (pt.max(cd).item() > 3.5) or (pt.min(cd).item() < 2.9) or (pt.isnan(cd).any().item()):
+    elif (pt.max(cd).item() > 3.5) or (pt.min(cd).item() < 2.85) or (pt.isnan(cd).any().item()):
         status = (False, "cd")
     elif (pt.max(actions.abs()).item() > 5.0) or (pt.isnan(actions).any().item()):
         status = (False, "actions")
-    elif (pt.max(alpha.abs()).item() > 1e3) or (pt.isnan(alpha).any().item()):
+    elif (pt.max(alpha.abs()).item() > 5e3) or (pt.isnan(alpha).any().item()):
         status = (False, "alpha")
     elif (pt.max(beta.abs()).item() > 5e3) or (pt.isnan(beta).any().item()):
         status = (False, "beta")
@@ -335,7 +402,8 @@ def check_trajectories(cl: pt.Tensor, cd: pt.Tensor, actions: pt.Tensor, alpha: 
 def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
                          path: str, states: pt.Tensor, cd: pt.Tensor, cl: pt.Tensor, actions: pt.Tensor,
                          alpha: pt.Tensor, beta: pt.Tensor, n_probes: int, n_input_steps: int, min_max: dict,
-                         len_trajectory: int = 400) -> dict and Tuple:
+                         len_trajectory: int = 400, corr_cd: FCModel = None, corr_cl: FCModel = None,
+                         correct_traj: bool = False) -> dict and Tuple:
     """
     predict a trajectory based on a given initial state and action using trained environment models for cd, and cl-p
 
@@ -353,6 +421,9 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
     :param n_input_steps: number as input time steps for the environment models
     :param min_max: the min- / max-values used for scaling the trajectories to the intervall [0, 1]
     :param len_trajectory: length of the trajectory, 1sec CFD = 100 epochs
+    :param corr_cl: model for correcting the cl-trajectory
+    :param corr_cd: model for correcting the cl-trajectory
+    :param correct_traj: flag if the model-generated trajectories should be corrected with another model
     :return: the predicted trajectory and a tuple containing the status if the generated trajectory is within realistic
              bounds, and if status = False which parameter is out of bounds
     """
@@ -413,9 +484,18 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
         traj_actions[:, t + n_input_steps] = traj_alpha[:, t + n_input_steps] / (traj_alpha[:, t + n_input_steps] +
                                                                                  traj_beta[:, t + n_input_steps])
     # re-scale everything for PPO-training and sort into dict
-    cl_rescaled = denormalize_data(traj_cl, min_max["cl"])[0, :]
-    cd_rescaled = denormalize_data(traj_cd, min_max["cd"])[0, :]
     act_rescaled = denormalize_data(traj_actions, min_max["actions"])[0, :]
+
+    if correct_traj:
+        # use the models to correct the predicted trajectories
+        cd_rescaled, cl_rescaled = correct_trajectries(corr_cd, corr_cl, traj_cd, traj_cl, min_max=min_max,
+                                                       load_path_cd="".join([path, "/cd_error_model/",
+                                                                             "/model_error_cd"]),
+                                                       load_path_cl="".join([path, "/cl_error_model/",
+                                                                             "/model_error_cl"]))
+    else:
+        cl_rescaled = denormalize_data(traj_cl, min_max["cl"])[0, :]
+        cd_rescaled = denormalize_data(traj_cd, min_max["cd"])[0, :]
 
     # sanity check if the created trajectories make sense
     status = check_trajectories(cl=cl_rescaled, cd=cd_rescaled, actions=act_rescaled, alpha=traj_alpha[0, :],
@@ -459,8 +539,9 @@ def train_env_models(path: str, n_t_input: int, n_probes: int, observations: dic
     # initialize environment networks
     env_model_cl_p = FCModel(n_inputs=n_t_input * (n_probes + 3), n_outputs=n_probes + 1, n_neurons=n_neurons,
                              n_layers=n_layers)
-    env_model_cd = FCModel(n_inputs=n_t_input * (n_probes + 3), n_outputs=1, n_neurons=n_neurons_cd,
-                           n_layers=n_layers_cd)
+    # env_model_cd = FCModel(n_inputs=n_t_input * (n_probes + 3), n_outputs=1, n_neurons=n_neurons_cd,
+    #                        n_layers=n_layers_cd)
+    env_model_cd = EnvModel(n_states=n_t_input * n_probes, n_cl=n_t_input, n_actions=n_t_input, n_out=1)
 
     # load environment models trained in the previous CFD episode
     if load:
@@ -506,7 +587,8 @@ def print_trajectory_info(no: int, buffer_size: int, i: int, tra: dict, key: str
 
 
 def fill_buffer_from_models(env_model_cl_p: list, env_model_cd: list, episode: int, path: str, observation: dict,
-                            n_input: int, n_probes: int, buffer_size: int, len_traj: int) -> list:
+                            n_input: int, n_probes: int, buffer_size: int, len_traj: int, corr_cd: FCModel,
+                            corr_cl: FCModel, correct_traj: bool=False) -> list:
     """
     creates trajectories using data from the CFD environment as initial states and the previously trained environment
     models in order to fill the buffer
@@ -520,6 +602,9 @@ def fill_buffer_from_models(env_model_cl_p: list, env_model_cd: list, episode: i
     :param n_probes: number of probes places in the flow field
     :param buffer_size: size of the buffer, specified in args when running the run_training.py
     :param len_traj: length of the trajectory, 1sec CFD = 100 epochs
+    :param corr_cl: model for correcting the cl-trajectory
+    :param corr_cd: model for correcting the cl-trajectory
+    :param correct_traj: flag if the model-generated trajectories should be corrected with another model
     :return: a list with the length of the buffer size containing the generated trajectories
     """
 
@@ -545,7 +630,7 @@ def fill_buffer_from_models(env_model_cl_p: list, env_model_cd: list, episode: i
                                         observation["actions"][idx:idx + n_input, traj_no],
                                         observation["alpha"][idx:idx + n_input, traj_no],
                                         observation["beta"][idx:idx + n_input, traj_no],
-                                        n_probes, n_input, min_max, len_traj)
+                                        n_probes, n_input, min_max, len_traj, corr_cd, corr_cl, correct_traj)
 
         # only add trajectory to buffer if the values make sense, otherwise discard it
         if ok[0]:
@@ -705,6 +790,37 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
         losses.append(loss)
 
     return cl_p_ensemble, cd_ensemble, pt.tensor(losses), init_data
+
+
+def correct_trajectries(cd_model: FCModel, cl_model: FCModel, cd: pt.Tensor, cl: pt.Tensor, load_path_cd: str,
+                        load_path_cl: str, min_max: dict) -> Tuple[pt.Tensor, pt.Tensor]:
+    """
+    correct the model-generated trajectories with models trained on the differences between model-free and
+    model-generated trajectories
+
+    Note: implemented here instead of in 'correct_env_model_error.py' in order to avoid circular import caused by a bad
+          implementation
+
+    :param cd_model: model for correcting the trajectories fo cd
+    :param cl_model: model for correcting the trajectories fo cl
+    :param cd: the trajectories of cd, generated by the env. model-ensemble
+    :param cl: the trajectories of cl, generated by the env. model-ensemble
+    :param load_path_cd: path to the state dict of the cd-correction model
+    :param load_path_cl: path to the state dict of the cl-correction model
+    :param min_max: global min- and max-values used for scaling the data for all models (incl. env. ME)
+    :return: corrected trajectories of cl- and cd
+    """
+    # load the models
+    cd_model.load_state_dict(pt.load(f"{load_path_cd}_val.pt"))
+    cl_model.load_state_dict(pt.load(f"{load_path_cl}_val.pt"))
+    cd_model.eval()
+    cl_model.eval()
+
+    # correct the trajectories
+    cd_out = cd_model(cd).detach()
+    cl_out = cl_model(cl).detach()
+
+    return denormalize_data(cd_out[0, :], min_max["cd"]), denormalize_data(cl_out[0, :], min_max["cl"])
 
 
 # since no model buffer is implemented at the moment, there is no access to the save_obs() method... so just do it here
