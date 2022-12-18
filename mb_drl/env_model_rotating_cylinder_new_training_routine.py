@@ -104,14 +104,16 @@ class EnvModel(pt.nn.Module):
 def create_simple_network(n_input: int, n_output: int, n_neurons: int, n_layers: int,
                           activation: callable) -> pt.nn.Sequential:
     """
+    creates a neural network
+
     Note: this function was provided by my supervisor Andre Weiner (https://github.com/AndreWeiner)
 
-    :param n_input:
-    :param n_output:
-    :param n_neurons:
-    :param n_layers:
-    :param activation:
-    :return:
+    :param n_input: number of inputs
+    :param n_output: number of outputs
+    :param n_neurons: number of neurons per layer
+    :param n_layers: number of hidden layers
+    :param activation: activation function
+    :return: model
     """
     layers = [pt.nn.Linear(n_input, n_neurons), activation()]
     for _ in range(n_layers):
@@ -539,9 +541,9 @@ def train_env_models(path: str, n_t_input: int, n_probes: int, observations: dic
     # initialize environment networks
     env_model_cl_p = FCModel(n_inputs=n_t_input * (n_probes + 3), n_outputs=n_probes + 1, n_neurons=n_neurons,
                              n_layers=n_layers)
-    # env_model_cd = FCModel(n_inputs=n_t_input * (n_probes + 3), n_outputs=1, n_neurons=n_neurons_cd,
-    #                        n_layers=n_layers_cd)
-    env_model_cd = EnvModel(n_states=n_t_input * n_probes, n_cl=n_t_input, n_actions=n_t_input, n_out=1)
+    env_model_cd = FCModel(n_inputs=n_t_input * (n_probes + 3), n_outputs=1, n_neurons=n_neurons_cd,
+                           n_layers=n_layers_cd)
+    # env_model_cd = EnvModel(n_states=n_t_input * n_probes, n_cl=n_t_input, n_actions=n_t_input, n_out=1)
 
     # load environment models trained in the previous CFD episode
     if load:

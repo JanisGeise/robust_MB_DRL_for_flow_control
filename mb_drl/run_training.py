@@ -3,6 +3,7 @@
 import sys
 import pickle
 import argparse
+import torch as pt
 
 from glob import glob
 from time import time
@@ -18,6 +19,7 @@ from drlfoam.agent import PPOAgent
 from drlfoam.environment import RotatingCylinder2D
 from drlfoam.execution import LocalBuffer, SlurmBuffer, SlurmConfig
 
+from examples.get_number_of_probes import get_number_of_probes
 from drlfoam.environment.env_model_rotating_cylinder_new_training_routine import *
 from drlfoam.environment.correct_env_model_error import train_correction_models, predict_traj_for_model_error
 
@@ -71,10 +73,13 @@ def main(args):
     # create a directory for training
     makedirs(training_path, exist_ok=True)
 
+    # get number of probes defined in the control dict and init env. correctly
+    n_probes = get_number_of_probes(os.getcwd())
+
     # make a copy of the base environment
     copytree(join(BASE_PATH, "openfoam", "test_cases", "rotatingCylinder2D"),
              join(training_path, "base"), dirs_exist_ok=True)
-    env = RotatingCylinder2D()
+    env = RotatingCylinder2D(n_probes=n_probes)
     env.path = join(training_path, "base")
 
     # if debug active -> add execution of bashrc to Allrun scripts, because otherwise the path to openFOAM is not set
@@ -274,7 +279,7 @@ class RunTrainingInDebugger:
 
 if __name__ == "__main__":
     # option for running the training in IDE, e.g. in debugger
-    DEBUG = True
+    DEBUG = False
 
     if not DEBUG:
         main(parseArguments())
@@ -297,9 +302,11 @@ if __name__ == "__main__":
         chdir(BASE_PATH)
 
         # test MB-DRL
-        d_args = RunTrainingInDebugger(episodes=60, runners=10, buffer=10, finish=5, n_input_time_steps=30, seed=2,
+        d_args = RunTrainingInDebugger(episodes=10, runners=4, buffer=4, finish=5, n_input_time_steps=30, seed=0,
                                        out_dir="examples/TEST", crashed_in_e=55)
         assert d_args.finish > 4, "finish time needs to be > 4s, (the first 4sec are uncontrolled)"
+        assert d_args.buffer >= 4, f"buffer needs to >= 4 in order to split trajectories for training and sampling" \
+                                   f" initial states"
 
         # run PPO training
         main(d_args)
@@ -312,5 +319,7 @@ if __name__ == "__main__":
         try:
             rmtree(d_args.output + "/cd_model")
             rmtree(d_args.output + "/cl_p_model")
+            rmtree(d_args.output + "/cl_error_model")
+            rmtree(d_args.output + "/cd_error_model")
         except FileNotFoundError:
             print("no directories for environment models found.")
