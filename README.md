@@ -18,7 +18,21 @@ MB-version. These scripts can e.g. be downloaded and pasted into an existing (lo
 completed MB-version of *drlfoam* can be found [here](https://github.com/JanisGeise/drlfoam), which is forked from the
 [original drlfoam](https://github.com/OFDataCommittee/drlfoam) repository.
 
+### Running a training on a local machine
+refer to [drlfoam](https://github.com/OFDataCommittee/drlfoam) for comprehensive guide, here just a brief overview...
+
+additional requirements for running parameter studies etc. can be found in the [requirements.txt](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/blob/main/requirements.txt)
+
+### Running a training on an HPC cluster
+refer to [drlfoam](https://github.com/OFDataCommittee/drlfoam) for comprehensive guide, here just a brief overview...
+
+Examples of shell-scripts for submitting jobs on an HPC cluster (here for the [Phoenix](https://www.tu-braunschweig.de/it/dienste/21/phoenix)
+cluster of TU Braunschweig) can be found in [run_job.sh](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/blob/main/run_job.sh)
+and [submit_jobs.sh](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/blob/main/submit_jobs.sh).
+
 ## Troubleshooting
+In case something is not working as expected or if you find any bugs, please feel free to open up a new
+[issue](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/issues).
 
 ## Report
 

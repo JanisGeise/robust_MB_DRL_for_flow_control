@@ -822,7 +822,7 @@ def correct_trajectries(cd_model: FCModel, cl_model: FCModel, p_model: FCModel, 
     # load the models
     cd_model.load_state_dict(pt.load(f"{load_path_cd}_val.pt"))
     cl_model.load_state_dict(pt.load(f"{load_path_cl}_val.pt"))
-    p_model.load_state_dict(pt.load(f"{load_path_cl}_val.pt"))
+    p_model.load_state_dict(pt.load(f"{load_path_p}_val.pt"))
     cd_model.eval()
     cl_model.eval()
     p_model.eval()
