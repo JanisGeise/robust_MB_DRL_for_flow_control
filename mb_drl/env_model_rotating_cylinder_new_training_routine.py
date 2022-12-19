@@ -405,7 +405,7 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
                          path: str, states: pt.Tensor, cd: pt.Tensor, cl: pt.Tensor, actions: pt.Tensor,
                          alpha: pt.Tensor, beta: pt.Tensor, n_probes: int, n_input_steps: int, min_max: dict,
                          len_trajectory: int = 400, corr_cd: FCModel = None, corr_cl: FCModel = None,
-                         correct_traj: bool = False) -> dict and Tuple:
+                         corr_p: FCModel = None, correct_traj: bool = False) -> dict and Tuple:
     """
     predict a trajectory based on a given initial state and action using trained environment models for cd, and cl-p
 
@@ -425,6 +425,7 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
     :param len_trajectory: length of the trajectory, 1sec CFD = 100 epochs
     :param corr_cl: model for correcting the cl-trajectory
     :param corr_cd: model for correcting the cl-trajectory
+    :param corr_p: model for correcting the p-trajectories
     :param correct_traj: flag if the model-generated trajectories should be corrected with another model
     :return: the predicted trajectory and a tuple containing the status if the generated trajectory is within realistic
              bounds, and if status = False which parameter is out of bounds
@@ -490,11 +491,13 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
 
     if correct_traj:
         # use the models to correct the predicted trajectories
-        cd_rescaled, cl_rescaled = correct_trajectries(corr_cd, corr_cl, traj_cd, traj_cl, min_max=min_max,
+        cd_rescaled, cl_rescaled = correct_trajectries(corr_cd, corr_cl, corr_p, traj_cd, traj_cl, min_max=min_max,
                                                        load_path_cd="".join([path, "/cd_error_model/",
                                                                              "/model_error_cd"]),
                                                        load_path_cl="".join([path, "/cl_error_model/",
-                                                                             "/model_error_cl"]))
+                                                                             "/model_error_cl"]),
+                                                       load_path_p="".join([path, "/p_error_model/",
+                                                                            "/model_error_p"]))
     else:
         cl_rescaled = denormalize_data(traj_cl, min_max["cl"])[0, :]
         cd_rescaled = denormalize_data(traj_cd, min_max["cd"])[0, :]
@@ -589,8 +592,8 @@ def print_trajectory_info(no: int, buffer_size: int, i: int, tra: dict, key: str
 
 
 def fill_buffer_from_models(env_model_cl_p: list, env_model_cd: list, episode: int, path: str, observation: dict,
-                            n_input: int, n_probes: int, buffer_size: int, len_traj: int, corr_cd: FCModel,
-                            corr_cl: FCModel, correct_traj: bool=False) -> list:
+                            n_input: int, n_probes: int, buffer_size: int, len_traj: int, corr_cd: FCModel = None,
+                            corr_cl: FCModel = None, corr_p: FCModel = None, correct_traj: bool = False) -> list:
     """
     creates trajectories using data from the CFD environment as initial states and the previously trained environment
     models in order to fill the buffer
@@ -606,6 +609,7 @@ def fill_buffer_from_models(env_model_cl_p: list, env_model_cd: list, episode: i
     :param len_traj: length of the trajectory, 1sec CFD = 100 epochs
     :param corr_cl: model for correcting the cl-trajectory
     :param corr_cd: model for correcting the cl-trajectory
+    :param corr_p: model for correcting the p-trajectories
     :param correct_traj: flag if the model-generated trajectories should be corrected with another model
     :return: a list with the length of the buffer size containing the generated trajectories
     """
@@ -794,8 +798,9 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
     return cl_p_ensemble, cd_ensemble, pt.tensor(losses), init_data
 
 
-def correct_trajectries(cd_model: FCModel, cl_model: FCModel, cd: pt.Tensor, cl: pt.Tensor, load_path_cd: str,
-                        load_path_cl: str, min_max: dict) -> Tuple[pt.Tensor, pt.Tensor]:
+def correct_trajectries(cd_model: FCModel, cl_model: FCModel, p_model: FCModel, cd: pt.Tensor, cl: pt.Tensor,
+                        load_path_cd: str, load_path_cl: str, load_path_p: str,
+                        min_max: dict) -> Tuple[pt.Tensor, pt.Tensor]:
     """
     correct the model-generated trajectories with models trained on the differences between model-free and
     model-generated trajectories
@@ -805,18 +810,22 @@ def correct_trajectries(cd_model: FCModel, cl_model: FCModel, cd: pt.Tensor, cl:
 
     :param cd_model: model for correcting the trajectories fo cd
     :param cl_model: model for correcting the trajectories fo cl
+    :param p_model: model for correcting the trajectories fo p
     :param cd: the trajectories of cd, generated by the env. model-ensemble
     :param cl: the trajectories of cl, generated by the env. model-ensemble
     :param load_path_cd: path to the state dict of the cd-correction model
     :param load_path_cl: path to the state dict of the cl-correction model
+    :param load_path_p: path to the state dict of the p-correction model
     :param min_max: global min- and max-values used for scaling the data for all models (incl. env. ME)
     :return: corrected trajectories of cl- and cd
     """
     # load the models
     cd_model.load_state_dict(pt.load(f"{load_path_cd}_val.pt"))
     cl_model.load_state_dict(pt.load(f"{load_path_cl}_val.pt"))
+    p_model.load_state_dict(pt.load(f"{load_path_cl}_val.pt"))
     cd_model.eval()
     cl_model.eval()
+    p_model.eval()
 
     # correct the trajectories
     cd_out = cd_model(cd).detach()
