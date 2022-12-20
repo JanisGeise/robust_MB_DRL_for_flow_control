@@ -100,6 +100,12 @@ def main(args):
             n_tasks=2, n_nodes=1, partition="standard", time="00:30:00",
             modules=["singularity/latest", "mpi/openmpi/4.1.1/gcc"]
         )
+        """
+        # for AWS
+        config = SlurmConfig(n_tasks=2, n_nodes=1, partition="c6i", time="00:30:00", modules=["openmpi/4.1.1"],
+                             commands=["source /fsx/OpenFOAM/OpenFOAM-v2206/etc/bashrc",
+                                       "source /fsx/drlfoam/setup-env"])
+        """
         buffer = SlurmBuffer(training_path, env,
                              buffer_size, n_runners, config, timeout=timeout)
     else:
@@ -117,7 +123,10 @@ def main(args):
                      env.action_bounds, env.action_bounds)
 
     # len_traj = length of the trajectory, assuming constant sample rate of 100 Hz (default value)
-    len_traj, obs_cfd, n_models, corr_traj = int(100 * (end_time - buffer.base_env.start_time)), [], 5, False
+    len_traj, obs_cfd, n_models = int(100 * (end_time - buffer.base_env.start_time)), [], 5
+
+    # corr_traj = flag for using additional models to correct the MB-trajectories based on MF-trajectories
+    corr_traj = True
 
     # begin training
     start_time = time()
@@ -195,7 +204,7 @@ def main(args):
                                                      observation=obs, n_probes=env.n_states,
                                                      n_input=n_input_time_steps, len_traj=len_traj,
                                                      buffer_size=buffer_size, corr_cd=corr_model_cd,
-                                                     corr_cl=corr_model_cl, correct_traj=corr)
+                                                     corr_cl=corr_model_cl, corr_p=corr_model_p, correct_traj=corr)
 
             # if len(predicted_traj) < buffer size -> discard trajectories from models and go back to CFD
             if len(predicted_traj) < buffer_size:

@@ -16,7 +16,7 @@ def get_number_of_probes(cwd) -> int:
     """
     # in case drlfoam is  run on HPC / using container, the path is different, so remove the last directory from it
     if cwd.endswith("examples"):
-        cwd = "".join(cwd.split("/")[:-1])
+        cwd = "/".join(cwd.split("/")[:-1])
     path_to_dict = cwd + r"/openfoam/test_cases/rotatingCylinder2D/system/controlDict"
     key = "probeLocations"
     with open(path_to_dict, "rb") as f:

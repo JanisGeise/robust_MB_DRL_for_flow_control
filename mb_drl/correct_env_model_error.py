@@ -130,7 +130,7 @@ def train_correction_models(real: list, predicted: list, load_path: str, buffer_
                     labels["states"][:, :, idx_train].reshape(shape_t),
                     features["states"][:, :, idx_val].reshape(shape_v), labels["states"][:, :, idx_val].reshape(shape_v),
                     save_name="model_error_p", save_dir="".join([load_path, "/states_error_model/"]), epochs=1000,
-                    batch_size=100)
+                    batch_size=shape_t[0])
 
     return error_model_cd, error_model_cl, error_model_p
 
