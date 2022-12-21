@@ -28,7 +28,7 @@ def rescale_data(x: pt.Tensor, x_min_max: list) -> pt.Tensor:
     return (x_min_max[1] - x_min_max[0]) * x + x_min_max[0]
 
 
-def resort_data(observations: list, len_traj: int) -> Tuple[pt.Tensor, pt.Tensor, pt.Tensor]:
+def resort_data(observations: list, len_traj: int) -> Tuple[pt.Tensor, pt.Tensor, pt.Tensor, pt.Tensor]:
     """
     resorts the trajectories sampled in  CFD
 
@@ -39,6 +39,7 @@ def resort_data(observations: list, len_traj: int) -> Tuple[pt.Tensor, pt.Tensor
     # sort the trajectories from all workers, for training the models, it doesn't matter from which episodes the data is
     shape, n_col = (len_traj, len(observations)), 0
     cl, cd, p = pt.zeros(shape), pt.zeros(shape), pt.zeros(shape[0], observations[0]["states"].size()[1], shape[1])
+    actions = pt.zeros(shape)
 
     for observation in range(len(observations)):
         # in case a trajectory has no values in it, drlfoam returns emtpy dict
@@ -51,14 +52,16 @@ def resort_data(observations: list, len_traj: int) -> Tuple[pt.Tensor, pt.Tensor
         elif observations[observation]["cd"].size()[0] > len_traj:
             cl[:, n_col] = observations[observation]["cl"][:len_traj]
             cd[:, n_col] = observations[observation]["cd"][:len_traj]
+            actions[:, n_col] = observations[observation]["actions"][:len_traj]
             p[:, :, n_col] = observations[observation]["states"][:, :len_traj]
         else:
             cl[:, n_col] = observations[observation]["cl"]
             cd[:, n_col] = observations[observation]["cd"]
+            actions[:, n_col] = observations[observation]["actions"]
             p[:, :, n_col] = observations[observation]["states"]
         n_col += 1
 
-    return cl, cd, p
+    return cl, cd, p, actions
 
 
 def create_feature_label(real_traj: list, pred_traj: list, len_traj: int, min_max_vals: dict) -> Tuple[dict, dict]:
@@ -72,9 +75,9 @@ def create_feature_label(real_traj: list, pred_traj: list, len_traj: int, min_ma
     :param min_max_vals: global min- and max-values used for normalization when training the env. model-ensemble
     :return: dict with the predicted and real trajectories of cd and cl
     """
-    # re-sort dict with trajectories to tensors
-    cl_real, cd_real, p_real = resort_data(real_traj, len_traj)
-    cl_pred, cd_pred, p_pred = resort_data(pred_traj, len_traj)
+    # re-sort dict with trajectories to tensors, actions of pred & real are the same here
+    cl_real, cd_real, p_real, _ = resort_data(real_traj, len_traj)
+    cl_pred, cd_pred, p_pred, a_pred = resort_data(pred_traj, len_traj)
 
     # scale everything to [0, 1] using the global min- max-values
     cd_pred, _ = normalize_data(cd_pred, min_max_vals["cd"])
@@ -83,6 +86,12 @@ def create_feature_label(real_traj: list, pred_traj: list, len_traj: int, min_ma
     cl_real, _ = normalize_data(cl_real, min_max_vals["cl"])
     p_pred, _ = normalize_data(p_pred, min_max_vals["states"])
     p_real, _ = normalize_data(p_real, min_max_vals["states"])
+    a_pred, _ = normalize_data(a_pred, min_max_vals["actions"])
+
+    # stack the actions on the feature tensors (action & MB-traj. used as input, real traj. as output)
+    cd_pred = pt.cat([cd_pred, a_pred])
+    cl_pred = pt.cat([cl_pred, a_pred])
+    p_pred = pt.cat([p_pred, a_pred.unsqueeze(1) * pt.ones(p_pred.size())])
 
     return {"cd": cd_pred, "cl": cl_pred, "states": p_pred}, {"cd": cd_real, "cl": cl_real, "states": p_real}
 
@@ -101,9 +110,9 @@ def train_correction_models(real: list, predicted: list, load_path: str, buffer_
     :param min_max_vals: global min- and max-values used for normalization when training the env. model-ensemble
     :return: models for correcting the trajectories of cl-, p and cd
     """
-    error_model_cl = FCModel(n_inputs=len_traj, n_outputs=len_traj, n_layers=3, n_neurons=50)
-    error_model_cd = FCModel(n_inputs=len_traj, n_outputs=len_traj, n_layers=3, n_neurons=75)
-    error_model_p = FCModel(n_inputs=len_traj, n_outputs=len_traj, n_layers=3, n_neurons=50)
+    error_model_cl = FCModel(n_inputs=2*len_traj, n_outputs=len_traj, n_layers=5, n_neurons=50)
+    error_model_cd = FCModel(n_inputs=2*len_traj, n_outputs=len_traj, n_layers=5, n_neurons=50)
+    error_model_p = FCModel(n_inputs=2*len_traj, n_outputs=len_traj, n_layers=5, n_neurons=150)
 
     features, labels = create_feature_label(real, predicted, len_traj, min_max_vals)
 
@@ -118,19 +127,20 @@ def train_correction_models(real: list, predicted: list, load_path: str, buffer_
     # train models
     _ = train_model(error_model_cd, features["cd"][:, idx_train].T, labels["cd"][:, idx_train].T,
                     features["cd"][:, idx_val].T, labels["cd"][:, idx_val].T, save_name="model_error_cd",
-                    save_dir="".join([load_path, "/cd_error_model/"]), epochs=1000)
+                    save_dir="".join([load_path, "/cd_error_model/"]), epochs=1000, stop=-1e-7)
     _ = train_model(error_model_cl, features["cl"][:, idx_train].T, labels["cl"][:, idx_train].T,
                     features["cl"][:, idx_val].T, labels["cl"][:, idx_val].T, save_name="model_error_cl",
-                    save_dir="".join([load_path, "/cl_error_model/"]), epochs=1000)
+                    save_dir="".join([load_path, "/cl_error_model/"]), epochs=1000, stop=-1e-7)
 
     # resort the tensor to [batch size, len_traj]
-    shape_t = (features["states"][:, :, idx_train].size()[1] * features["states"][:, :, idx_train].size()[2], len_traj)
-    shape_v = (labels["states"][:, :, idx_val].size()[1] * labels["states"][:, :, idx_val].size()[2], len_traj)
+    shape_t = (features["states"][:, :, idx_train].size()[1] * features["states"][:, :, idx_train].size()[2], len_traj*2)
+    shape_v = (labels["states"][:, :, idx_val].size()[1] * labels["states"][:, :, idx_val].size()[2], len_traj*2)
     _ = train_model(error_model_p, features["states"][:, :, idx_train].reshape(shape_t),
-                    labels["states"][:, :, idx_train].reshape(shape_t),
-                    features["states"][:, :, idx_val].reshape(shape_v), labels["states"][:, :, idx_val].reshape(shape_v),
+                    labels["states"][:, :, idx_train].reshape((shape_t[0], len_traj)),
+                    features["states"][:, :, idx_val].reshape(shape_v),
+                    labels["states"][:, :, idx_val].reshape((shape_v[0], len_traj)),
                     save_name="model_error_p", save_dir="".join([load_path, "/states_error_model/"]), epochs=1000,
-                    batch_size=shape_t[0])
+                    batch_size=shape_t[0], stop=-1e-7)
 
     return error_model_cd, error_model_cl, error_model_p
 
@@ -204,7 +214,8 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, path: str, st
 
     # all trajectories in batch are the same, so just take the first one
     output = {"states": rescale_data(traj_p, min_max["states"])[0, :, :], "cl": cl_rescaled, "cd": cd_rescaled,
-              "rewards": 3.0 - (cd_rescaled + 0.1 * cl_rescaled.abs())}
+              "rewards": 3.0 - (cd_rescaled + 0.1 * cl_rescaled.abs()),
+              "actions": rescale_data(traj_actions, min_max["actions"])[0, :]}
 
     return output
 

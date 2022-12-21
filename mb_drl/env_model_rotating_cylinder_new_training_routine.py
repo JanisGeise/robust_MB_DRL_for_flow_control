@@ -125,7 +125,7 @@ def create_simple_network(n_input: int, n_output: int, n_neurons: int, n_layers:
 
 
 def train_model(model: pt.nn.Module, features_train: pt.Tensor, labels_train: pt.Tensor, features_val: pt.Tensor,
-                labels_val: pt.Tensor, epochs: int = 5000, lr: float = 0.01, batch_size: int = 25,
+                labels_val: pt.Tensor, epochs: int = 5000, lr: float = 0.01, batch_size: int = 25, stop: float = -1e-6,
                 save_model: bool = True, save_name: str = "bestModel", save_dir: str = "env_model") -> Tuple[list, list]:
     """
     train environment model based on sampled trajectories
@@ -138,6 +138,7 @@ def train_model(model: pt.nn.Module, features_train: pt.Tensor, labels_train: pt
     :param epochs: number of epochs for training
     :param lr: learning rate
     :param batch_size: batch size
+    :param stop: if avg. gradient of validation loss reaches this value, the training is aborted
     :param save_model: option to save best model, default is True
     :param save_dir: path to directory where models should be saved
     :param save_name: name of the model saved, default is number of epoch
@@ -207,7 +208,7 @@ def train_model(model: pt.nn.Module, features_train: pt.Tensor, labels_train: pt
                                  pt.mean(pt.tensor(validation_loss[-52:-48]))) / 48
 
             # since loss decreases the gradient is negative, so if it converges or starts increasing, then stop training
-            if validation_loss[-1] <= 1e-5 or avg_grad_val_loss >= -1e-6:
+            if validation_loss[-1] <= 1e-5 or avg_grad_val_loss >= stop:
                 break
 
     return training_loss, validation_loss
@@ -491,7 +492,10 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
 
     if correct_traj:
         # use the models to correct the predicted trajectories
-        cd_rescaled, cl_rescaled, p_rescaled = correct_trajectries(corr_cd, corr_cl, corr_p, traj_cd, traj_cl, traj_p,
+        cd_rescaled, cl_rescaled, p_rescaled = correct_trajectries(corr_cd, corr_cl, corr_p,
+                                                                   pt.cat([traj_cd, traj_actions], dim=1),
+                                                                   pt.cat([traj_cl, traj_actions], dim=1),
+                                                                   pt.cat([traj_p, traj_actions.unsqueeze(-1) * pt.ones(traj_p.size())], dim=1),
                                                                    min_max=min_max,
                                                                    load_path_cd="".join([path, "/cd_error_model/",
                                                                                          "/model_error_cd"]),
@@ -833,7 +837,9 @@ def correct_trajectries(cd_model: FCModel, cl_model: FCModel, p_model: FCModel, 
     # correct the trajectories
     cd_out = cd_model(cd).detach()
     cl_out = cl_model(cl).detach()
-    p_out = p_model(p.reshape((p.size()[2], p.size()[0], p.size()[1]))).detach().reshape((p.size()))
+    p_out = p_model(p.reshape((p.size()[2], p.size()[0], p.size()[1])))
+    # len(input) = 2*len(output) because input = probes + actions, output is just corrected probes
+    p_out = p_out.detach().reshape((p.size()[0], p_out.size(-1), p.size()[-1]))
 
     return denormalize_data(cd_out[0, :], min_max["cd"]), denormalize_data(cl_out[0, :], min_max["cl"]),\
            denormalize_data(p_out[0, :, :], min_max["states"])
