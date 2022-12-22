@@ -378,7 +378,9 @@ def split_data(files: list, len_traj: int, n_probes: int, n_train: float = 0.45,
 
 def check_trajectories(cl: pt.Tensor, cd: pt.Tensor, actions: pt.Tensor, alpha: pt.Tensor, beta: pt.Tensor) -> Tuple:
     """
-    check the model-generated trajectories wrt realistic values or nan's
+    check the model-generated trajectories wrt realistic values or nan's.
+
+    Note: these boundaries depend on the current setup, e.g. Reynolds number and therefore may have to be modified
 
     :param cl: trajectory of cl
     :param cd: trajectory of cd

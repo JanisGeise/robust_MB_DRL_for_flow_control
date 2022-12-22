@@ -32,7 +32,8 @@ and [submit_jobs.sh](https://github.com/JanisGeise/robust_MB_DRL_for_flow_contro
 
 ## Troubleshooting
 In case something is not working as expected or if you find any bugs, please feel free to open up a new
-[issue](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/issues).
+[issue](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/issues). You can also check out the last section of the 
+[overview notebook](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/blob/main/overview.ipynb) for tips.
 
 ## Report
 
