@@ -58,8 +58,8 @@ class FCModel(pt.nn.Module):
 
 
 class EnvModel(pt.nn.Module):
-    def __init__(self, n_states: int, n_cl: int, n_actions: int, n_out: int = 1, n_neurons_action: int = 50,
-                 n_layers_actions: int = 3, n_neurons_cl_p: int = 50, n_layers_cl_p: int = 2):
+    def __init__(self, n_states: int, n_cl: int, n_actions_cd: int, n_out: int = 1, n_neurons_action_cd: int = 50,
+                 n_layers_actions_cd: int = 3, n_neurons_cl_p: int = 50, n_layers_cl_p: int = 2):
         """
         This class is similar to the FCModel class, but in contrast this is not a fully connected model. In this class,
         the feature is split into two separate models (internally) in order to control the weighing of the input
@@ -70,21 +70,24 @@ class EnvModel(pt.nn.Module):
 
         :param n_states: N probes
         :param n_cl: N cl values
-        :param n_actions: N actions
+        :param n_actions_cd: N actions and N cd
         :param n_out: activation function
+        :param n_neurons_action_cd: number of neurons for the action-cd part of the network
+        :param n_layers_actions_cd: number of layers for the action-cd part of the network
+        :param n_neurons_cl_p: number of neurons for the cl-p part of the network
+        :param n_layers_cl_p: number of layers for the cl-p part of the network
         :return: None
         """
         super(EnvModel, self).__init__()
         self._state_net = create_simple_network(n_input=n_states + n_cl, n_output=n_states + n_cl,
                                                 n_neurons=n_neurons_cl_p, n_layers=n_layers_cl_p, activation=pt.nn.ReLU)
-        # TODO: 2*n_actions bc otherwise dim mismatch error?!
-        self._action_net = create_simple_network(n_input=2*n_actions, n_output=n_actions, n_neurons=n_neurons_action,
-                                                 n_layers=n_layers_actions, activation=pt.nn.ReLU)
-        self._head = create_simple_network(n_actions + n_states + n_cl, n_out, n_neurons=100, n_layers=2,
+        self._action_net = create_simple_network(n_input=n_actions_cd, n_output=n_actions_cd, n_neurons=n_neurons_action_cd,
+                                                 n_layers=n_layers_actions_cd, activation=pt.nn.ReLU)
+        self._head = create_simple_network(n_actions_cd + n_states + n_cl, n_out, n_neurons=100, n_layers=2,
                                            activation=pt.nn.ReLU)
         self._n_states = n_states
         self._n_cl = n_cl
-        self._n_actions = n_actions
+        self._n_actions = n_actions_cd
         self._n_target = n_out
 
     def forward(self, x):
@@ -554,7 +557,7 @@ def train_env_models(path: str, n_t_input: int, n_probes: int, observations: dic
                              n_layers=n_layers)
     env_model_cd = FCModel(n_inputs=n_t_input * (n_probes + 3), n_outputs=1, n_neurons=n_neurons_cd,
                            n_layers=n_layers_cd)
-    # env_model_cd = EnvModel(n_states=n_t_input * n_probes, n_cl=n_t_input, n_actions=n_t_input, n_out=1)
+    # env_model_cd = EnvModel(n_states=n_t_input * n_probes, n_cl=n_t_input, n_actions_cd=2*n_t_input, n_out=1)
 
     # load environment models trained in the previous CFD episode
     if load:
