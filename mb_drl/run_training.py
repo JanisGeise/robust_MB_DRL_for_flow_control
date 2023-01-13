@@ -123,7 +123,9 @@ def main(args):
                      env.action_bounds, env.action_bounds)
 
     # len_traj = length of the trajectory, assuming constant sample rate of 100 Hz (default value)
-    len_traj, obs_cfd, n_models = int(100 * (end_time - buffer.base_env.start_time)), [], 5
+    # NOTE: at Re != 100, the parameter len_traj needs to be adjusted accordingly since the simulation is only run to
+    # the same dimensionless time but here the pysical time is required, e.g. 5*int(...) for Re = 500
+    len_traj, obs_cfd, n_models = 1 * int(100 * round(end_time - buffer.base_env.start_time, 1)), [], 5
 
     # corr_traj = flag for using additional models to correct the MB-trajectories based on MF-trajectories
     corr_traj = False

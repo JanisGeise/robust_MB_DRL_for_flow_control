@@ -81,9 +81,9 @@ class EnvModel(pt.nn.Module):
         super(EnvModel, self).__init__()
         self._state_net = create_simple_network(n_input=n_states + n_cl, n_output=n_states + n_cl,
                                                 n_neurons=n_neurons_cl_p, n_layers=n_layers_cl_p, activation=pt.nn.ReLU)
-        self._action_net = create_simple_network(n_input=n_actions_cd, n_output=n_actions_cd, n_neurons=n_neurons_action_cd,
-                                                 n_layers=n_layers_actions_cd, activation=pt.nn.ReLU)
-        self._head = create_simple_network(n_actions_cd + n_states + n_cl, n_out, n_neurons=100, n_layers=2,
+        self._action_net = create_simple_network(n_input=n_actions_cd, n_output=5*n_actions_cd,
+                                                 n_neurons=n_neurons_action_cd, n_layers=n_layers_actions_cd, activation=pt.nn.ReLU)
+        self._head = create_simple_network(5*n_actions_cd + n_states + n_cl, n_out, n_neurons=100, n_layers=2,
                                            activation=pt.nn.ReLU)
         self._n_states = n_states
         self._n_cl = n_cl
