@@ -1,4 +1,5 @@
 # Robust model-based deep reinforcement learning for flow control
+## Abstract
 
 ## Overview
 This student thesis project aims to implement a model-based deep reinforcement learning algorithm for controlling the
@@ -14,21 +15,51 @@ approach in order to accelerate the training process was implemented by [Eric Sc
 An overview of this repository and information on how to choose parameters for training can be found in the
 [overview notebook](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/blob/main/overview.ipynb). This 
 repository only contains all altered and added scripts of *drlfoam* in order to modify the MF-DRL algorithm towards an
-MB-version. These scripts can e.g. be downloaded and pasted into an existing (local) *drlfoam* version. Alternatively, a
-completed MB-version of *drlfoam* can be found [here](https://github.com/JanisGeise/drlfoam), which is forked from the
-[original drlfoam](https://github.com/OFDataCommittee/drlfoam) repository.
+MB-version. These scripts can e.g. be downloaded and pasted into an existing (local) *drlfoam* version. The modified scripts are 
+located in the *mb_drl* directory and need to be sorted into *drlfoam* as follows:
+
+- *create_dummy_policy.py*, *run_training.py* and *get_number_of_probes.py* have to be located in *drlfoam/examples/*
+- *rotating_cylinder.py*, *env_model_rotating_cylinder_new_training_routine.py* and *correct_env_model_error.py* have to
+  be located in *drlfoam/drlfoam/environment/*
+
+Alternatively, a completed MB-version of *drlfoam* can be found [here](https://github.com/JanisGeise/drlfoam), which is forked from the
+[original drlfoam](https://github.com/OFDataCommittee/drlfoam) repository. The remaining setup is the same as presented in the
+*Readme* file of the *drlfoam* repository. For the sake of completeness the following sections will briefly show the required
+steps for running a training either on a local machine or on an HPC cluster.
+
+### Testing the different approaches of modeling the CFD environment
+All approaches of modeling the CFD environment with fully-connected neural networks presented in the report are located in the *test_env_models* directory.
+In order to use these scripts, a model-free training using *drlfoam* is required to be conducted in advance. More information on how to use these scripts can
+be found in the [overview notebook](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/blob/main/overview.ipynb) and in the documentation at the top of each script.
+It is important to note that the training routine implemented in these scripts corresponds to the training routine implemented in
+*env_model_rotating_cylinder.py*. Further, since the scripts use the *matplotlib* library, they should be executed on a local machine (not an HPC cluster).
+The overall runtimes of these scripts are generally in the order of minutes up to approximately one hour when executed on a local machine, depending on the setup.
+The *test_env_models* directory as well as the *scripts_py_plots* directory is generally not required for conducting model-free or model-based trainings.
 
 ### Running a training on a local machine
-refer to [drlfoam](https://github.com/OFDataCommittee/drlfoam) for comprehensive guide, here just a brief overview...
+still TODO, refer to [drlfoam](https://github.com/OFDataCommittee/drlfoam) for comprehensive guide, here just a brief overview...
 
 additional requirements for running parameter studies etc. can be found in the [requirements.txt](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/blob/main/requirements.txt)
 
 ### Running a training on an HPC cluster
-refer to [drlfoam](https://github.com/OFDataCommittee/drlfoam) for comprehensive guide, here just a brief overview...
+still TODO, refer to [drlfoam](https://github.com/OFDataCommittee/drlfoam) for comprehensive guide, here just a brief overview...
 
 Examples of shell-scripts for submitting jobs on an HPC cluster (here for the [Phoenix](https://www.tu-braunschweig.de/it/dienste/21/phoenix)
 cluster of TU Braunschweig) can be found in [run_job.sh](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/blob/main/run_job.sh)
 and [submit_jobs.sh](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/blob/main/submit_jobs.sh).
+
+## Post-processing and visualization of the results
+The results of the model-free as well as of the model-based training can directly be post-processed and visualized using 
+the scripts located in the *scripts_py_plots* directory. These scripts work only when running on a local machine, since
+they rely on *matplotlib*. For post-processing the results of a PPO-training, the *plot_ppo_results.py* script is the main
+script, which needs to be executed. Prior execution all paths and settings need to be adjusted in the *setup* dictionary
+of the script.
+
+The scripts *compare_training_routines.py*, *influence_buffer_and_trajectory_length.py*, 
+*influence_network_architecture_new_training* and *influence_ratio_MB_MF_episodes.py* can be used for conducting and post-precessing
+parameter studies regarding the MF- and MB-training. Further information on how to use these scripts can be found in the documentation
+at the top of each script.
+
 
 ## Troubleshooting
 In case something is not working as expected or if you find any bugs, please feel free to open up a new

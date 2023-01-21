@@ -11,15 +11,18 @@
     prerequisites:
         - execution of the 'run_training.py' function in the 'test_training' directory in order to conduct a training
           and generate trajectories within the CFD environment (https://github.com/OFDataCommittee/drlfoam)
+        - this training can either be model-free or model-based
 
     optional:
         - execution of simulation for the best policy from training, also results of a simulation without control
+        - in this case, the results of the training are not averaged over multiple seed values, since the final policy
+          corresponds to a specific training of one seed value
 """
 import re
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from typing import Union, List
+from typing import Union
 from os import mkdir, path
 from matplotlib.patches import Circle, Rectangle
 
@@ -434,9 +437,9 @@ if __name__ == "__main__":
         "path_final_results": r"results_best_policy/",              # path to the results using the best policy
         # "case_name": ["seed0/", "seed1/", "seed2/"],
         "case_name": ["e80_r10_b10_f8_MF/", "e80_r10_b10_f5_MB/"],  # dirs with the training results (controlled)
-        "e_trajectory": [0, 1, 4, 75, 79],              # for which episodes should a trajectory be plotted (cl & cd)
+        "e_trajectory": [0, 1, 4, 75, 76, 79],             # for which episodes should a trajectory be plotted (cl & cd)
         "n_probes": 12,         # number of probes placed in flow field
-        "avg_over_cases": True,                                 # if cases should be averaged over, e.g. different seeds
+        "avg_over_cases": False,                            # if cases should be averaged over, e.g. different seeds
         "plot_final_res": False,                        # flag for plotting the results using final policy, if available
         "param_study": True,           # flag if parameter study, only used for generating legend entries automatically
         "color": ["blue", "red", "green", "darkviolet"],  # line colors, uncontrolled = black (if plot final res = True)

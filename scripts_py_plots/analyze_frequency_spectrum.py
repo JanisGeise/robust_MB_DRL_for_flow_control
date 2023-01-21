@@ -9,7 +9,8 @@
     prerequisites:
         - execution of the 'run_training.py' function in the 'test_training' directory in order to conduct a training
           and generate trajectories within the CFD environment (https://github.com/OFDataCommittee/drlfoam)
-        - execution of simulation for the best policy from training, also results of a simulation without control
+        - optional: execution of simulation for the best policy from training, also results of a simulation without
+          control
 """
 import torch as pt
 import pandas as pd
@@ -176,7 +177,7 @@ def analyze_frequencies_final_result(settings: dict, uncontrolled_case: Union[di
     plt.close("all")
 
     # plot a more detailed view of frequency spectrum of omega
-    # f = 2.67 Hz ~ f(cl(uncontrolled)), f = 5.67 Hz ~ f(cd(uncontrolled))
+    # f = 2.67 Hz ~ f(cl(uncontrolled)), f = 5.67 Hz ~ f(cd(uncontrolled)) for Re = 100
     fig, ax = plt.subplots(1, 1, figsize=(14, 5))
     ax.axvspan(-42, -41, 0, 1, color="red", alpha=0.3, label="$N * f(c_l)$")
     ax.axvspan(-42, -41, 0, 1, color="green", alpha=0.3, label="$N * f(c_d)$")
