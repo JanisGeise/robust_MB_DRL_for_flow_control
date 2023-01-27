@@ -52,6 +52,14 @@ def load_trajectory_data(path: str) -> dict:
             elif observations[episode][worker]["actions"].size()[0] < traj_length:
                 counter += 1
                 continue
+            # in case there exist more points in one trajectory, just take the first len_traj ones (happens sometimes)
+            elif observations[episode][worker]["actions"].size()[0] > traj_length:
+                # merge data from all runners for each episode
+                for key in tmp:
+                    if key == "states":
+                        tmp[key][:, :, worker] = observations[episode][worker][key][:traj_length, :]
+                    else:
+                        tmp[key][:, worker] = observations[episode][worker][key][:traj_length]
             else:
                 # merge data from all runners for each episode
                 for key in tmp:

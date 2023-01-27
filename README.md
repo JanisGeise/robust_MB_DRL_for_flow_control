@@ -24,8 +24,7 @@ located in the *mb_drl* directory and need to be sorted into *drlfoam* as follow
 
 Alternatively, a completed MB-version of *drlfoam* can be found [here](https://github.com/JanisGeise/drlfoam), which is forked from the
 [original drlfoam](https://github.com/OFDataCommittee/drlfoam) repository. The remaining setup is the same as presented in the
-*Readme* file of the *drlfoam* repository. For the sake of completeness the following sections will briefly show the required
-steps for running a training either on a local machine or on an HPC cluster.
+*Readme* file of the *drlfoam* repository.
 
 ### Testing the different approaches of modeling the CFD environment
 All approaches of modeling the CFD environment with fully-connected neural networks presented in the report are located in the *test_env_models* directory.
@@ -34,15 +33,14 @@ be found in the [overview notebook](https://github.com/JanisGeise/robust_MB_DRL_
 It is important to note that the training routine implemented in these scripts corresponds to the training routine implemented in
 *env_model_rotating_cylinder.py*. Further, since the scripts use the *matplotlib* library, they should be executed on a local machine (not an HPC cluster).
 The overall runtimes of these scripts are generally in the order of minutes up to approximately one hour when executed on a local machine, depending on the setup.
-The *test_env_models* directory as well as the *scripts_py_plots* directory is generally not required for conducting model-free or model-based trainings.
+The *test_env_models* directory as well as the *scripts_py_plots* directory is not required for conducting model-free or model-based trainings.
+The additional requirements for using the scripts in the *test_env_models* directory can be found in the [requirements.txt](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/blob/main/requirements.txt)
 
-### Running a training on a local machine
-still TODO, refer to [drlfoam](https://github.com/OFDataCommittee/drlfoam) for comprehensive guide, here just a brief overview...
-
-additional requirements for running parameter studies etc. can be found in the [requirements.txt](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/blob/main/requirements.txt)
-
-### Running a training on an HPC cluster
-still TODO, refer to [drlfoam](https://github.com/OFDataCommittee/drlfoam) for comprehensive guide, here just a brief overview...
+### Installation and running a training
+The installation of *drlfoam* is thoroughly described in the [drlfoam](https://github.com/OFDataCommittee/drlfoam)
+repository along with a comprehensive guide on how to conduct trainings either on a local machine or on HPC clusters.
+Since the *drlfoam* repository is frequently updated, some instructions or dependencies may change in the future and are therefore
+not presented here in order to avoid any discrepancies between *drlfoam* and this repository.
 
 Examples of shell-scripts for submitting jobs on an HPC cluster (here for the [Phoenix](https://www.tu-braunschweig.de/it/dienste/21/phoenix)
 cluster of TU Braunschweig) can be found in [run_job.sh](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/blob/main/run_job.sh)

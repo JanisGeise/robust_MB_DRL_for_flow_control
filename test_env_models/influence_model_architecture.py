@@ -4,6 +4,7 @@
           model(s)
         - plots the resulting L2- and L1-norm of the error within the test data set as heatmaps for the predicted
           states, cl and cd
+        - Note: this script uses the same training routine as implemented in 'mb_drl/env_model_rotating_cylinder.py'
 
     dependencies:
         - 'train_environment_model.py'

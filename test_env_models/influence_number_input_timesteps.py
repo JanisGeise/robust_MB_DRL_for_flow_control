@@ -3,6 +3,8 @@
         run parameter study to get the total prediction error of the probes, cd and cl depending on the number of time
         steps used as input for the environment model(s)
 
+        Note: this script uses the same training routine as implemented in 'mb_drl/env_model_rotating_cylinder.py'
+
     dependencies:
         - 'train_environment_model.py'
         - 'post_process_results_env_model.py' for calculating the prediction error
@@ -112,15 +114,15 @@ if __name__ == "__main__":
         "path_to_probes": r"base/postProcessing/probes/0/",     # should always be the same
         "model_dir": "test_env_models/",    # relative to the load_path
         "episode_depending_model": False,   # either one model for whole data set or new model for each episode
-        "which_episode": 2,                 # for which episode should the parameter study be done (1st episode = zero)
+        "which_episode": 39,                # for which episode should the parameter study be done (1st episode = zero)
         "two_env_models": False,            # 'True': one model only for predicting cd, another for probes and cl
-        "predict_ds": True,                 # use change of state for prediction and not the nex state
+        "predict_ds": False,                # use change of state for prediction and not the nex state
         "print_temp": False,                # print core temperatur of processor as info
         "normalize": True,                  # True: data will be normalized to interval of [1, 0]
         "n_input_steps": [2, 3, 5, 10, 15, 20, 25, 30, 35],  # number of initial time steps as input
         "len_trajectory": 200,              # trajectory length for training the environment model
         "ratio": (0.65, 0.3, 0.05),         # splitting ratio for train-, validation and test data
-        "smooth_cd": True,                  # flag if cd-Trajectories should be filtered after loading (low-pass filter)
+        "smooth_cd": False,                 # flag if cd-Trajectories should be filtered after loading (low-pass filter)
         "epochs": 10000,                    # number of epochs to run for the environment model
         "n_neurons": 50,                    # number of neurons per layer for the environment model
         "n_layers": 3,                      # number of hidden layers for the environment model
@@ -156,8 +158,10 @@ if __name__ == "__main__":
         ax.yaxis.set_major_formatter(FormatStrFormatter("%.3f"))
         ax.set_xlabel("$number$ $of$ $time$ $steps$ $as$ $input$", usetex=True, fontsize=13)
         if norm == 0:
+            ax.set_ylim(1e-5, 1e-1)
             ax.set_ylabel("$L_2-norm$ $(relative$ $prediction$ $error)$", usetex=True, fontsize=12)
         else:
+            ax.set_ylim(1e-4, 0)
             ax.set_ylabel("$L_1-norm$ $(relative$ $prediction$ $error)$", usetex=True, fontsize=12)
         fig.subplots_adjust(left=0.04)
         fig.tight_layout()
