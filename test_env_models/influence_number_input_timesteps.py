@@ -137,7 +137,7 @@ if __name__ == "__main__":
         assert setup["ratio"][2] == 0, "for episode depending model the test data ratio must be set to zero!"
 
     # load the sampled trajectories divided into training-, validation- and test data
-    pt.Generator().manual_seed(0)                           # ensure reproducibility
+    pt.manual_seed(0)                           # ensure reproducibility
     divided_data = dataloader_wrapper(settings=setup)
 
     if setup["episode_depending_model"]:

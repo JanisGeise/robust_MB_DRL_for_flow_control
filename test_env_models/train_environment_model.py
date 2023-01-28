@@ -215,7 +215,7 @@ def train_model(model: pt.nn.Module, state_train: pt.Tensor, action_train: pt.Te
 
             # get prediction and loss based on n time steps for next state
             prediction = model(feature).squeeze()
-            loss_train = criterion(prediction, label)
+            loss_train = criterion(prediction, label.squeeze())
             loss_train.backward()
             optimizer.step()
             batch_loss[b] = loss_train.item()
@@ -229,7 +229,7 @@ def train_model(model: pt.nn.Module, state_train: pt.Tensor, action_train: pt.Te
                                                             cl_val, cd_val, action_val, cd_model, two_models, use_ds,
                                                             min_max_ds)
                 prediction = model(feature).squeeze()
-                loss_val = criterion(prediction, label)
+                loss_val = criterion(prediction, label.squeeze())
                 batch_loss[b] = loss_val.item()
 
         validation_loss.append(pt.mean(batch_loss).item())
@@ -323,7 +323,7 @@ def train_test_env_model(settings: dict, trajectory_data: dict, n_neurons: int =
 
     # test model: loop over all test data and predict the trajectories based on given initial state and actions
     environment_model.load_state_dict(pt.load("".join([settings["load_path"], settings["model_dir"],
-                                                       f"/bestModel_train.pt"])))
+                                                       f"/bestModel_val.pt"])))
     prediction, shape = [], [settings["n_input_steps"], 1]
     for i in range(trajectory_data["actions_test"].size()[1]):
         model_input = pt.concat([trajectory_data["states_test"][:settings["n_input_steps"], :, i],
@@ -392,7 +392,7 @@ def train_test_env_model_episode_wise(settings: dict, trajectory_data: dict, n_n
 
         # test model: loop over all test data and predict the trajectories based on given initial state and actions
         environment_model.load_state_dict(pt.load("".join([settings["load_path"], settings["model_dir"],
-                                                           f"/bestModel_episode{episode + 2}_train.pt"])))
+                                                           f"/bestModel_episode{episode + 2}_val.pt"])))
 
         # loop over every trajectory within the current episode and try to predict the trajectories
         tmp_prediction = []
@@ -473,9 +473,9 @@ def env_model_2models(settings: dict, trajectory_data: dict, n_neurons: int = 32
 
     # test model: loop over all test data and predict the trajectories based on given initial state and actions
     environment_model_1.load_state_dict(pt.load("".join([settings["load_path"], settings["model_dir"],
-                                                         f"/env_model_1/bestModel_train.pt"])))
+                                                         f"/env_model_1/bestModel_val.pt"])))
     environment_model_cd.load_state_dict(pt.load("".join([settings["load_path"], settings["model_dir"],
-                                                         f"/cd_model/bestModel_train.pt"])))
+                                                         f"/cd_model/bestModel_val.pt"])))
     prediction, shape = [], [settings["n_input_steps"], 1]
     for i in range(trajectory_data["actions_test"].size()[1]):
         model_input = pt.concat([trajectory_data["states_test"][:settings["n_input_steps"], :, i],
@@ -651,9 +651,9 @@ def env_model_episode_wise_2models(settings: dict, trajectory_data: dict, n_neur
 
         # test model: loop over all test data and predict the trajectories based on given initial state and actions
         environment_model_1.load_state_dict(pt.load(f"{settings['load_path'] + settings['model_dir']}"
-                                                    f"/env_model_1/bestModel_episode{episode + 2}_train.pt"))
+                                                    f"/env_model_1/bestModel_episode{episode + 2}_val.pt"))
         environment_model_cd.load_state_dict(pt.load(f"{settings['load_path'] + settings['model_dir']}"
-                                                     f"/cd_model/bestModel_episode{episode + 2}_train.pt"))
+                                                     f"/cd_model/bestModel_episode{episode + 2}_val.pt"))
 
         # loop over every trajectory within the current episode and try to predict the trajectories
         tmp_prediction = []

@@ -105,8 +105,8 @@ def plot_rewards_vs_episode(settings: dict, reward_mean: Union[list, pt.Tensor],
         ax.fill_between(range(len(reward_mean[c])), reward_mean[c] - reward_std[c], reward_mean[c] + reward_std[c],
                         color=settings["color"][c], alpha=0.3)
 
-    ax.set_ylabel("$mean$ $reward$", usetex=True, fontsize=12)
-    ax.set_xlabel("$episode$ $number$", usetex=True, fontsize=12)
+    ax.set_ylabel("$mean$ $reward$", usetex=True, fontsize=13)
+    ax.set_xlabel("$episode$ $number$", usetex=True, fontsize=13)
     ax.legend(loc="lower right", framealpha=1.0, fontsize=10, ncol=2)
     plt.savefig("".join([settings["main_load_path"], setup["path_controlled"], "/plots/rewards_vs_episode.png"]),
                 dpi=600)
@@ -207,8 +207,8 @@ def plot_variance_of_beta_dist(settings: dict, var_beta_dist: Union[list, pt.Ten
     for c in range(n_cases):
         ax.plot(range(len(var_beta_dist[c])), var_beta_dist[c], color=settings["color"][c], label=settings["legend"][c])
 
-    ax.set_ylabel("$mean$ $variance$ $of$ $beta-distribution$", usetex=True, fontsize=12)
-    ax.set_xlabel("$episode$ $number$", usetex=True, fontsize=12)
+    ax.set_ylabel("$mean$ $variance$ $of$ $beta-distribution$", usetex=True, fontsize=13)
+    ax.set_xlabel("$episode$ $number$", usetex=True, fontsize=13)
     ax.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=2)
     plt.savefig("".join([settings["main_load_path"], setup["path_controlled"], "/plots/var_beta_distribution.png"]),
                 dpi=600)
@@ -232,8 +232,8 @@ def plot_total_reward(settings: dict, reward_mean: list, reward_std: list, n_cas
         ax.errorbar(c + 1, reward_mean[c], yerr=reward_std[c], color=settings["color"][c], fmt="o", capsize=5,
                     label=settings["legend"][c])
 
-    ax.set_ylabel("$total$ $reward$", usetex=True, fontsize=12)
-    ax.set_xlabel("$case$ $number$", usetex=True, fontsize=12)
+    ax.set_ylabel("$total$ $reward$", usetex=True, fontsize=13)
+    ax.set_xlabel("$case$ $number$", usetex=True, fontsize=13)
     ax.set_xticks(range(1, n_cases + 1, 1))
     ax.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=2)
     plt.grid(which="major", axis="y", linestyle="--", alpha=0.85, color="black", lw=1)

@@ -10,7 +10,7 @@ from time import time
 from os.path import join
 from torch import manual_seed
 from shutil import copytree, rmtree
-from os import makedirs, chdir, environ, system
+from os import makedirs, chdir, environ, system, getcwd
 
 BASE_PATH = environ.get("DRL_BASE", "")
 sys.path.insert(0, BASE_PATH)
@@ -74,7 +74,7 @@ def main(args):
     makedirs(training_path, exist_ok=True)
 
     # get number of probes defined in the control dict and init env. correctly
-    n_probes = get_number_of_probes(os.getcwd())
+    n_probes = get_number_of_probes(getcwd())
 
     # make a copy of the base environment
     copytree(join(BASE_PATH, "openfoam", "test_cases", "rotatingCylinder2D"),
