@@ -218,6 +218,11 @@ def load_trajectory_data(files: list, len_traj: int, n_probes: int):
     """
     observations = [pickle.load(open(file, "rb")) for file in files]
 
+    # in new version of drlfoam: observations are in stored in '.pt' files, not '.pkl', so try to load them in case
+    # 'observations' is empty
+    if not observations:
+        observations = [pt.load(open(file, "rb")) for file in files]
+
     # sort the trajectories from all workers, for training the models, it doesn't matter from which episodes the data is
     shape, n_col = (len_traj, len(observations) * len(observations[0])), 0
     states = pt.zeros((shape[0], n_probes, shape[1]))

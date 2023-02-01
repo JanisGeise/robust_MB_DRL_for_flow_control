@@ -28,6 +28,13 @@ def load_trajectory_data(path: str) -> dict:
     # sort imported data wrt to episode number
     files = natsorted(glob(path + "observations_*.pkl"))
     observations = [pickle.load(open(file, "rb")) for file in files]
+
+    # in new version of drlfoam: observations are in stored in '.pt' files, not '.pkl', so try to load them in case
+    # 'observations' is empty
+    if not observations:
+        files = natsorted(glob(path + "observations_*.pt"))
+        observations = [pt.load(open(file, "rb")) for file in files]
+
     traj_length, counter, mb_episodes = len(observations[0][0]["actions"]), 0, 0
 
     # sort the trajectories from all workers wrt the episode

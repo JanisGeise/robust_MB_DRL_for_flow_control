@@ -43,6 +43,12 @@ def load_trajectory_data(path: str, preserve_episodes: bool = False, len_traj: i
     # load the 'observations_*.pkl' files containing the trajectories sampled in the CFD environment
     files = natsorted(glob(path + "observations_*.pkl"))
     observations = [pickle.load(open(file, "rb")) for file in files]
+
+    # in new version of drlfoam: observations are in stored in '.pt' files, not '.pkl', so try to load them in case
+    # 'observations' is empty
+    if not observations:
+        observations = [pt.load(open(file, "rb")) for file in files]
+
     actual_traj_length = len(observations[0][0]["actions"])
 
     # make sure there are no invalid settings defined
