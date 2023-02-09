@@ -149,6 +149,10 @@ if __name__ == "__main__":
 
     # plot L1- and L2-norm of error made by the environment model(s)
     loss = pt.stack(losses, dim=0)
+
+    # save losses
+    pt.save(loss, "".join([setup["load_path"], setup["model_dir"], "/loss.pt"]))
+
     for norm in range(2):
         fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(8, 6))
         ax.plot(x, loss[:, norm, 0], color="red", label="$probes$", marker="o", fillstyle="none")

@@ -186,7 +186,8 @@ def plot_mean_std_error_of_test_data(settings: dict, mean_data: Union[list, pt.T
                         color="green", alpha=0.3)
 
     plt.legend(loc="upper left", framealpha=1.0, fontsize=10, ncol=3)
-    ax.yaxis.set_major_formatter(FormatStrFormatter("%.3f"))
+    # ax.yaxis.set_major_formatter(FormatStrFormatter("%.3f"))
+    ax.yscale("log")
     ax.set_xlabel(xlabel, usetex=True, fontsize=12)
     ax.set_ylabel(ylabel, usetex=True, fontsize=12)
     fig.subplots_adjust(left=0.04)

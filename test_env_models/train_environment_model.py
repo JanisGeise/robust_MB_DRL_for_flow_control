@@ -745,6 +745,11 @@ if __name__ == "__main__":
     pred_trajectory, train_loss, val_loss = train_fct(setup, divided_data, n_neurons=setup["n_neurons"],
                                                       n_layers=setup["n_layers"], epochs=setup["epochs"])
 
+    # save everything
+    pt.save(pred_trajectory, "".join([setup["load_path"], setup["model_dir"], "/pred_trajectory.pt"]))
+    pt.save(train_loss, "".join([setup["load_path"], setup["model_dir"], "/train_loss.pt"]))
+    pt.save(val_loss, "".join([setup["load_path"], setup["model_dir"], "/val_loss.pt"]))
+
     # create directory for plots and post-process the data
     if not path.exists("".join([setup["load_path"], setup["model_dir"], "/plots"])):
         mkdir("".join([setup["load_path"], setup["model_dir"], "/plots"]))

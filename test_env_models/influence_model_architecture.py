@@ -214,6 +214,9 @@ if __name__ == "__main__":
     if not path.exists("".join([setup["load_path"] + setup["model_dir"] + "/plots"])):
         mkdir("".join([setup["load_path"] + setup["model_dir"] + "/plots"]))
 
+    # save losses
+    pt.save(losses, "".join([setup["load_path"], setup["model_dir"], "/losses.pt"]))
+
     # plot L2 and L1 losses wrt n_neurons and n_layers as heatmap
     plot_losses(setup, losses, parameter="states")
     plot_losses(setup, losses, parameter="cl")
