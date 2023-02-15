@@ -82,7 +82,7 @@ def plot_cl_cd_vs_prediction(path: str, real_data: dict, predicted_data: List[di
     :return: None
     """
     fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(14, 6))
-    for i in range(len(predicted_data)):
+    for i in range(2):
         x = range(predicted_data[i]["cl"].size()[0])
         for j in range(len(predicted_data) + 1):
             if i == 0:

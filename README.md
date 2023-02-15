@@ -1,10 +1,26 @@
 # Robust model-based deep reinforcement learning for flow control
 ## Abstract
+Active flow control has the potential of achieving remarkable drag reductions in applications for fluid mechanics, when 
+combined with deep reinforcement learning (DRL). The high computational demands for CFD simulations currently limits the 
+applicability of DRL to rather simple cases, such as the flow past a cylinder, as a consequence of the large amount of simulations 
+which have to be carried out throughout the training. One possible approach of reducing the computational requirements is 
+to substitute the simulations partially with models, e.g. deep neural networks; however, model uncertainties and error 
+propagation may lead an unstable training and deteriorated performance compared to the model-free counterpart. The present 
+thesis aims to modify the model-free training routine for controlling the flow past a cylinder towards a model-based one. 
+Therefore, the policy training alternates between the CFD environment and environment models, which are trained successively 
+over the course of the policy optimization. In order to reduce uncertainties and consequently improve the prediction accuracy, 
+the CFD environment is represented by two model-ensembles responsible for predicting the states and lift force as well as 
+the aerodynamic drag, respectively. It could have been shown that this approach is able to yield a comparable performance 
+to the model-free training routine at a Reynolds number of $Re = 100$ while reducing the overall runtime by up to $68.91\%$. 
+The model-based training, however, showed a high dependency of the performance and stability on the initialization, which 
+needs to be investigated further. An increase of the Reynolds number to $Re = 500$ and $Re = 1000$ revealed several issues 
+within the model-free training routine, such as a dependency of the stability of the policy optimization on its initialization, 
+which were encountered in the subsequently conducted model-based trainings as well.
 
 ## Overview
 This student thesis project aims to implement a model-based deep reinforcement learning algorithm for controlling the
 flow past a cylinder. Therefore, the [drlfoam](https://github.com/OFDataCommittee/drlfoam) repository, which already 
-provides a model-free version is used as a starting point.
+provides a model-free version is used as a starting point. The full report of this thesis can be found [here](...).
 
 This project is a continuation of the work done by [Darshan Thummar](https://github.com/darshan315/flow_past_cylinder_by_DRL) and
 [Fabian Gabriel](https://github.com/FabianGabriel/Active_flow_control_past_cylinder_using_DRL), a first attempt to use a model-based
@@ -22,7 +38,7 @@ located in the *mb_drl* directory and need to be sorted into *drlfoam* as follow
 - *rotating_cylinder.py*, *env_model_rotating_cylinder_new_training_routine.py* and *correct_env_model_error.py* have to
   be located in *drlfoam/drlfoam/environment/*
 
-Alternatively, a completed MB-version of *drlfoam* can be found [here](https://github.com/JanisGeise/drlfoam), which is forked from the
+Alternatively, a completed MB-version of *drlfoam* can be found [here](https://github.com/JanisGeise/drlfoam/tree/mb_drl), which is forked from the
 [original drlfoam](https://github.com/OFDataCommittee/drlfoam) repository. The remaining setup is the same as presented in the
 *Readme* file of the *drlfoam* repository.
 
@@ -65,6 +81,22 @@ In case something is not working as expected or if you find any bugs, please fee
 [overview notebook](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/blob/main/overview.ipynb) for tips.
 
 ## Report
+The report of this thesis can be found under: https://zenodo.org/record/7642927
+
+BibTex citation:
+```
+@misc{janis_geise_2023_7642927,
+  author       = {Janis Geise},
+  title        = {{Robust model-based deep reinforcement learning for 
+                   flow control}},
+  month        = feb,
+  year         = 2023,
+  publisher    = {Zenodo},
+  version      = 1,
+  doi          = {10.5281/zenodo.7642927},
+  url          = {https://doi.org/10.5281/zenodo.7642927}
+}
+```
 
 ## References
 - the original [drlfoam repository](https://github.com/OFDataCommittee/drlfoam), currently maintained by
