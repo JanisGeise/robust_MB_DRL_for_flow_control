@@ -149,6 +149,9 @@ def wrapper_parameter_study(settings: dict) -> None:
     # concatenate the losses-list to one tensor
     losses = pt.cat(losses, dim=-1)
 
+    # save losses
+    pt.save(losses, "".join([settings["main_load_path"], settings["save_path"], "/losses.pt"]))
+
     # re-organize settings dict in order to be able to use the plotting function
     settings_cl_p = {"load_path": settings["main_load_path"], "model_dir": settings["save_path"],
                      "n_neurons": settings["n_neurons_cl_p"], "n_layers": settings["n_layers_cl_p"],

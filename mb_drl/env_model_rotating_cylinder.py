@@ -441,21 +441,22 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
         tmp_pred = policy_model(s_real).squeeze().detach()
         traj_alpha[:, t + n_input_steps], traj_beta[:, t + n_input_steps] = tmp_pred[:, 0], tmp_pred[:, 1]
 
-        # calculate the expectation for omega (action_normalized = alpha / (alpha / beta))
-        traj_actions[:, t + n_input_steps] = traj_alpha[:, t + n_input_steps] / (traj_alpha[:, t + n_input_steps] +
-                                                                                 traj_beta[:, t + n_input_steps])
-    # re-scale everything for PPO-training and sort into dict
+        # sample the value for omega (scaled to [0, 1])
+        beta_distr = pt.distributions.beta.Beta(traj_alpha[:, t + n_input_steps], traj_beta[:, t + n_input_steps])
+        traj_actions[:, t + n_input_steps] = beta_distr.sample()
+
+    # re-scale everything for PPO-training and sort into dict, therefore always use the first trajectory in the batch
+    act_rescaled = denormalize_data(traj_actions, min_max["actions"])[0, :]
     cl_rescaled = denormalize_data(traj_cl, min_max["cl"])[0, :]
     cd_rescaled = denormalize_data(traj_cd, min_max["cd"])[0, :]
-    act_rescaled = denormalize_data(traj_actions, min_max["actions"])[0, :]
+    p_rescaled = denormalize_data(traj_p, min_max["states"])[0, :, :]
 
     # sanity check if the created trajectories make sense
     status = check_trajectories(cl=cl_rescaled, cd=cd_rescaled, actions=act_rescaled, alpha=traj_alpha[0, :],
                                 beta=traj_beta[0, :])
 
-    # all trajectories in batch are the same, so just take the first one
-    output = {"states": denormalize_data(traj_p, min_max["states"])[0, :, :], "cl": cl_rescaled, "cd": cd_rescaled,
-              "alpha": traj_alpha[0, :], "beta": traj_beta[0, :], "actions": act_rescaled, "generated_by": "env_models",
+    output = {"states": p_rescaled, "cl": cl_rescaled, "cd": cd_rescaled, "alpha": traj_alpha[0, :],
+              "beta": traj_beta[0, :], "actions": act_rescaled, "generated_by": "env_models",
               "rewards": 3.0 - (cd_rescaled + 0.1 * cl_rescaled.abs())}
 
     return output, status

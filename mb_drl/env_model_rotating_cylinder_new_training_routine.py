@@ -494,10 +494,11 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
         tmp_pred = policy_model(s_real).squeeze().detach()
         traj_alpha[:, t + n_input_steps], traj_beta[:, t + n_input_steps] = tmp_pred[:, 0], tmp_pred[:, 1]
 
-        # calculate the expectation for omega (action_normalized = alpha / (alpha / beta))
-        traj_actions[:, t + n_input_steps] = traj_alpha[:, t + n_input_steps] / (traj_alpha[:, t + n_input_steps] +
-                                                                                 traj_beta[:, t + n_input_steps])
-    # re-scale everything for PPO-training and sort into dict
+        # sample the value for omega (scaled to [0, 1])
+        beta_distr = pt.distributions.beta.Beta(traj_alpha[:, t + n_input_steps], traj_beta[:, t + n_input_steps])
+        traj_actions[:, t + n_input_steps] = beta_distr.sample()
+
+    # re-scale everything for PPO-training and sort into dict, therefore always use the first trajectory in the batch
     act_rescaled = denormalize_data(traj_actions, min_max["actions"])[0, :]
 
     if correct_traj:
