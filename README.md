@@ -28,7 +28,7 @@ approach in order to accelerate the training process was implemented by [Eric Sc
 
 **Note: The encountered stability issues in a model-based training described in the report as well as in the overview
 notebook were a consequence of an implementation error when computing the action in the model-based episodes. This error
-was discovered after the submission of the report (commit e7399e88) and corrected afterwards (commit b0e3b8c8).**
+was discovered after the [submission of the report](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/tree/submission) and corrected afterwards ([commit](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/commit/b0e3b8c8322a72aec1a7314aa8b93f7369e4f67f)).**
 
 ## Getting started
 ### General information
