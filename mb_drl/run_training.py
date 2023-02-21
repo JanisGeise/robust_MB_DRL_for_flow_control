@@ -66,6 +66,7 @@ def main(args):
     end_time = args.finish
     executer = args.environment
     timeout = args.timeout
+    checkpoint_file = args.checkpoint
 
     # ensure reproducibility
     manual_seed(args.seed)
@@ -86,10 +87,8 @@ def main(args):
     if hasattr(args, "debug"):
         args.set_openfoam_bashrc(path=env.path)
         n_input_time_steps = args.n_input_time_steps
-        debug = args.debug
     else:
         n_input_time_steps = 30
-        debug = False
 
     # create buffer
     if executer == "local":
@@ -112,19 +111,27 @@ def main(args):
         raise ValueError(
             f"Unknown executer {executer}; available options are 'local' and 'slurm'.")
 
-    # execute Allrun.pre script and set new end_time
-    buffer.prepare()
-    buffer.base_env.start_time = buffer.base_env.end_time
-    buffer.base_env.end_time = end_time
-    buffer.reset()
-
     # create PPO agent
     agent = PPOAgent(env.n_states, env.n_actions, -
                      env.action_bounds, env.action_bounds)
 
-    # len_traj = length of the trajectory, assuming constant sample rate of 100 Hz (default value)
+    # load checkpoint if provided
+    if checkpoint_file:
+        print(f"Loading checkpoint from file {checkpoint_file}")
+        agent.load_state(join(training_path, checkpoint_file))
+        starting_episode = agent.history["episode"][-1] + 1
+        buffer._n_fills = starting_episode
+    else:
+        starting_episode = 0
+        buffer.prepare()
+
+    buffer.base_env.start_time = buffer.base_env.end_time
+    buffer.base_env.end_time = end_time
+    buffer.reset()
+
+    # len_traj = length of the trajectory in [s], assuming constant sample rate of 100 Hz (default value)
     # NOTE: at Re != 100, the parameter len_traj needs to be adjusted accordingly since the simulation is only run to
-    # the same dimensionless time but here the pysical time is required, e.g. 5*int(...) for Re = 500
+    # the same dimensionless time but here the physical time is required, e.g. 5*int(...) for Re = 500
     len_traj, obs_cfd, n_models = 1 * int(100 * round(end_time - buffer.base_env.start_time, 1)), [], 5
 
     # corr_traj = flag for using additional models to correct the MB-trajectories based on MF-trajectories
@@ -132,19 +139,12 @@ def main(args):
 
     # begin training
     start_time = time()
-    for e in range(episodes):
+    for e in range(starting_episode, episodes):
         print(f"Start of episode {e}")
-
-        # for debugging -> if episode of crash reached: pause execution in order to set breakpoints (so debugger can run
-        # without breakpoints / supervisions up to this point)
-        if debug:
-            if e == args.crashed_in_e:
-                _ = input(f"reached episode {e} (= episode where training crashes) - set breakpoints!")
-
         # every 5th episode sample from CFD
         if e == 0 or e % 5 == 0:
             # save path of CFD episodes -> models should be trained with all CFD data available
-            obs_cfd.append("".join([training_path + f"/observations_{e}.pkl"]))
+            obs_cfd.append("".join([training_path + f"/observations_{e}.pt"]))
 
             # set episode for save_trajectory() method, because n_fills is now updated only every 5th episode
             if e != 0:
@@ -186,7 +186,9 @@ def main(args):
             # save train- and validation losses of the environment models in N_models > 1 (1st model runs different
             # amounts of epochs, ...)
             if n_models == 1:
-                pass
+                losses = {"train_loss_cl_p": l[0][0], "train_loss_cd": l[0][1], "val_loss_cl_p": l[1][0],
+                          "val_loss_cd": l[1][1]}
+                save_trajectories(training_path, e, losses, name="/env_model_loss_")
             else:
                 losses = {"train_loss_cl_p": l[:, 0, 0, :], "train_loss_cd": l[:, 0, 1, :],
                           "val_loss_cl_p": l[:, 1, 0, :], "val_loss_cd": l[:, 1, 1, :]}
@@ -254,8 +256,7 @@ def main(args):
         # continue with original PPO-training routine
         print_statistics(actions, rewards)
         agent.update(states, actions, rewards)
-        agent.save(join(training_path, f"policy_{e}.pkl"),
-                   join(training_path, f"value_{e}.pkl"))
+        agent.save_state(join(training_path, f"checkpoint.pt"))
         current_policy = agent.trace_policy()
         buffer.update_policy(current_policy)
         current_policy.save(join(training_path, f"policy_trace_{e}.pt"))
@@ -288,7 +289,7 @@ class RunTrainingInDebugger:
         self.n_input_time_steps = n_input_time_steps
         self.seed = seed
         self.timeout = timeout
-        self.crashed_in_e = crashed_in_e
+        self.checkpoint = False
 
     def set_openfoam_bashrc(self, path: str):
         system(f"sed -i '5i # source bashrc for openFOAM for debugging purposes\\n{self.command}' {path}/Allrun.pre")
