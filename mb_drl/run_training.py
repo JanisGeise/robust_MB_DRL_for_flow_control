@@ -1,9 +1,7 @@
 """ Example training script.
 """
 import sys
-import pickle
 import argparse
-import torch as pt
 
 from glob import glob
 from time import time
@@ -21,7 +19,6 @@ from drlfoam.execution import LocalBuffer, SlurmBuffer, SlurmConfig
 
 from examples.get_number_of_probes import get_number_of_probes
 from drlfoam.environment.env_model_rotating_cylinder_new_training_routine import *
-from drlfoam.environment.correct_env_model_error import train_correction_models, predict_traj_for_model_error
 
 
 def print_statistics(actions, rewards):
@@ -53,6 +50,8 @@ def parseArguments():
                     help="Maximum allowed runtime of a single simulation in seconds.")
     ag.add_argument("-s", "--seed", required=False, default=0, type=int,
                     help="seed value for torch")
+    ag.add_argument("-c", "--checkpoint", required=False, default="", type=str,
+                    help="Load training state from checkpoint file.")
     args = ag.parse_args()
     return args
 
@@ -86,9 +85,9 @@ def main(args):
     # if debug active -> add execution of bashrc to Allrun scripts, because otherwise the path to openFOAM is not set
     if hasattr(args, "debug"):
         args.set_openfoam_bashrc(path=env.path)
-        n_input_time_steps = args.n_input_time_steps
+        env_model = SetupEnvironmentModel(n_input_time_steps=args.n_input_time_steps, path=training_path)
     else:
-        n_input_time_steps = 30
+        env_model = SetupEnvironmentModel(path=training_path)
 
     # create buffer
     if executer == "local":
@@ -128,105 +127,76 @@ def main(args):
     buffer.base_env.start_time = buffer.base_env.end_time
     buffer.base_env.end_time = end_time
     buffer.reset()
-
-    # len_traj = length of the trajectory in [s], assuming constant sample rate of 100 Hz (default value)
-    # NOTE: at Re != 100, the parameter len_traj needs to be adjusted accordingly since the simulation is only run to
-    # the same dimensionless time but here the physical time is required, e.g. 5*int(...) for Re = 500
-    len_traj, obs_cfd, n_models = 1 * int(100 * round(end_time - buffer.base_env.start_time, 1)), [], 5
-
-    # corr_traj = flag for using additional models to correct the MB-trajectories based on MF-trajectories
-    corr_traj = False
+    env_model.last_cfd = starting_episode
 
     # begin training
     start_time = time()
     for e in range(starting_episode, episodes):
         print(f"Start of episode {e}")
-        # every 5th episode sample from CFD
-        if e == 0 or e % 5 == 0:
-            # save path of CFD episodes -> models should be trained with all CFD data available
-            obs_cfd.append("".join([training_path + f"/observations_{e}.pt"]))
+        if e == starting_episode or env_model.determine_switching(e):
+            # save path of current CFD episode
+            env_model.append_cfd_obs(e)
 
-            # set episode for save_trajectory() method, because n_fills is now updated only every 5th episode
-            if e != 0:
+            # update n_fills
+            if e != starting_episode:
                 buffer._n_fills = e
 
             buffer.fill()
             states, actions, rewards = buffer.observations
 
+            # set the correct trajectory length
+            env_model.len_traj = actions[0].size()[0]
+
             # in 1st episode: CFD data is used to train environment models for 1st time
-            if e == 0:
-                cl_p_models, cd_models, l, obs = wrapper_train_env_model_ensemble(training_path, obs_cfd, len_traj,
-                                                                                  env.n_states, buffer_size, n_models,
-                                                                                  n_time_steps=n_input_time_steps)
+            if e == starting_episode:
+                cl_p_models, cd_models, l, obs = wrapper_train_env_model_ensemble(training_path, env_model.obs_cfd,
+                                                                                  env_model.len_traj, env.n_states,
+                                                                                  buffer_size, env_model.n_models,
+                                                                                  n_time_steps=env_model.t_input)
 
-            # ever 5th episode: models are loaded and re-trained based on CFD data of the current & last CFD episode
+            # ever CFD episode: models are loaded and re-trained based on CFD data of the current & last CFD episode
             else:
-                cl_p_models, cd_models, l, obs = wrapper_train_env_model_ensemble(training_path, obs_cfd, len_traj,
-                                                                                  env.n_states, buffer_size, n_models,
+                cl_p_models, cd_models, l, obs = wrapper_train_env_model_ensemble(training_path, env_model.obs_cfd,
+                                                                                  env_model.len_traj, env.n_states,
+                                                                                  buffer_size, env_model.n_models,
                                                                                   load=True,
-                                                                                  n_time_steps=n_input_time_steps)
+                                                                                  n_time_steps=env_model.t_input)
 
-            # train the models for correcting the cl- and cd trajectories, until ~e = 40, training runs stable without
-            # correction, then it gets unstable. When correcting, the training is very stable, but rewards are not
-            # increasing that much, so combine these two approaches
-            if e >= 35 and corr_traj:
-                min_max = {"cd": obs["min_max_cd"], "cl": obs["min_max_cl"], "states": obs["min_max_states"],
-                           "actions": obs["min_max_actions"]}
-                corr_out = predict_traj_for_model_error(cl_p_models, cd_models, training_path, obs_cfd[-1],
-                                                        n_input_time_steps, env.n_states, len_traj, min_max)
+            # save train- and validation losses of the environment models
+            env_model.save_losses(e, l)
 
-                # in case there are no / not enough trajectories in the current episode, don't update the models
-                if corr_out[0] and len(corr_out[0]) >= 2:
-                    corr_model_cd, corr_model_cl, corr_model_p = train_correction_models(corr_out[0], corr_out[1],
-                                                                                         training_path, buffer_size,
-                                                                                         len_traj, min_max)
-            else:
-                corr_model_cd, corr_model_cl, corr_model_p = None, None, None
-
-            # save train- and validation losses of the environment models in N_models > 1 (1st model runs different
-            # amounts of epochs, ...)
-            if n_models == 1:
-                losses = {"train_loss_cl_p": l[0][0], "train_loss_cd": l[0][1], "val_loss_cl_p": l[1][0],
-                          "val_loss_cd": l[1][1]}
-                save_trajectories(training_path, e, losses, name="/env_model_loss_")
-            else:
-                losses = {"train_loss_cl_p": l[:, 0, 0, :], "train_loss_cd": l[:, 0, 1, :],
-                          "val_loss_cl_p": l[:, 1, 0, :], "val_loss_cd": l[:, 1, 1, :]}
-                save_trajectories(training_path, e, losses, name="/env_model_loss_")
-
-            # all observations are saved in obs_resorted, so reset buffer
+            # reset buffer, policy loss and set the current episode as last CFD episode
             buffer.reset()
+            env_model.reset(e)
 
         # fill buffer with trajectories generated by the environment models
         else:
-            if e > 35 and corr_traj:
-                corr = True
-            else:
-                corr = False
             # generate trajectories from initial states using policy from previous episode, fill model buffer with them
-            predicted_traj = fill_buffer_from_models(cl_p_models, cd_models, e, training_path,
-                                                     observation=obs, n_probes=env.n_states,
-                                                     n_input=n_input_time_steps, len_traj=len_traj,
-                                                     buffer_size=buffer_size, corr_cd=corr_model_cd,
-                                                     corr_cl=corr_model_cl, corr_p=corr_model_p, correct_traj=corr)
+            predicted_traj, current_policy_loss = fill_buffer_from_models(cl_p_models, cd_models, e, training_path,
+                                                                          observation=obs, n_probes=env.n_states,
+                                                                          n_input=env_model.t_input,
+                                                                          len_traj=env_model.len_traj,
+                                                                          buffer_size=buffer_size, agent=agent)
+            env_model.policy_loss.append(current_policy_loss)
 
             # if len(predicted_traj) < buffer size -> discard trajectories from models and go back to CFD
             if len(predicted_traj) < buffer_size:
                 buffer._n_fills = e
                 buffer.fill()
                 states, actions, rewards = buffer.observations
-                obs_cfd.append("".join([training_path + f"/observations_{e}.pkl"]))
+                env_model.append_cfd_obs(e)
 
                 # re-train environment models to avoid failed trajectories in the next episode
-                cl_p_models, cd_models, l, obs = wrapper_train_env_model_ensemble(training_path, obs_cfd, len_traj,
-                                                                                  env.n_states, buffer_size, n_models,
+                cl_p_models, cd_models, l, obs = wrapper_train_env_model_ensemble(training_path, env_model.obs_cfd,
+                                                                                  env_model.len_traj, env.n_states,
+                                                                                  buffer_size, env_model.n_models,
                                                                                   load=True, e_re_train=100,
                                                                                   e_re_train_cd=100,
-                                                                                  n_time_steps=n_input_time_steps)
+                                                                                  n_time_steps=env_model.t_input)
 
             else:
-                # save the generated trajectories, for now without model buffer instance
-                save_trajectories(training_path, e, predicted_traj)
+                # save the model-generated trajectories
+                env_model.save(e, predicted_traj)
 
                 # states, actions and rewards required for PPO-training, they are already re-scaled when generated
                 states = [predicted_traj[traj]["states"] for traj in range(buffer_size)]
@@ -263,10 +233,6 @@ def main(args):
         buffer.reset()
     print(f"Training time (s): {time() - start_time}")
 
-    # save training statistics
-    with open(join(training_path, "training_history.pkl"), "wb") as f:
-        pickle.dump(agent.history, f, protocol=pickle.HIGHEST_PROTOCOL)
-
 
 class RunTrainingInDebugger:
     """
@@ -276,8 +242,7 @@ class RunTrainingInDebugger:
     """
 
     def __init__(self, episodes: int = 2, runners: int = 2, buffer: int = 2, finish: float = 5.0,
-                 n_input_time_steps: int = 30, seed: int = 0, timeout: int = 1e15, crashed_in_e: int = 5,
-                 out_dir: str = "examples/TEST_for_debugging"):
+                 n_input_time_steps: int = 30, seed: int = 0, timeout: int = 1e15, out_dir: str = "examples/TEST"):
         self.command = ". /usr/lib/openfoam/openfoam2206/etc/bashrc"
         self.output = out_dir
         self.iter = episodes
@@ -306,7 +271,7 @@ if __name__ == "__main__":
 
     else:
         # for debugging purposes, set environment variables for the current directory
-        environ["DRL_BASE"] = "/media/janis/Daten/Studienarbeit/drlfoam/"
+        environ["DRL_BASE"] = "/home/janis/Hiwi_ISM/results_drlfoam_MB/drlfoam/"
         environ["DRL_TORCH"] = "".join([environ["DRL_BASE"], "libtorch/"])
         environ["DRL_LIBBIN"] = "".join([environ["DRL_BASE"], "/openfoam/libs/"])
         sys.path.insert(0, environ["DRL_BASE"])
@@ -320,9 +285,8 @@ if __name__ == "__main__":
         sys.path.insert(0, environ["WM_PROJECT_DIR"])
         chdir(BASE_PATH)
 
-        # test MB-DRL
-        d_args = RunTrainingInDebugger(episodes=10, runners=4, buffer=4, finish=5, n_input_time_steps=30, seed=0,
-                                       out_dir="examples/TEST", crashed_in_e=55)
+        # test MB-DRL on local machine
+        d_args = RunTrainingInDebugger(episodes=80, runners=4, buffer=4, finish=5, n_input_time_steps=30, seed=0)
         assert d_args.finish > 4, "finish time needs to be > 4s, (the first 4sec are uncontrolled)"
         assert d_args.buffer >= 4, f"buffer needs to >= 4 in order to split trajectories for training and sampling" \
                                    f" initial states"
