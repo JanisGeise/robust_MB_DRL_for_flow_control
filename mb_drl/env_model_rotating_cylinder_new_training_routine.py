@@ -40,7 +40,7 @@ class SetupEnvironmentModel:
             switch = 0
         else:
             # mask difference of policy loss for each model -> 1 if policy improved, 0 if not
-            diff = ((pt.tensor(self.policy_loss[-1]) - pt.tensor(self.policy_loss[0])) > 0.0).int()
+            diff = ((pt.tensor(self.policy_loss[-2]) - pt.tensor(self.policy_loss[-1])) > 0.0).int()
 
             # if policy for less than x% of the models improves, then switch to CFD -> 0 = no switching, 1 = switch
             switch = [0 if sum(diff) / len(diff) >= self.threshold else 1][0]
@@ -113,20 +113,17 @@ class EnvironmentModel(pt.nn.Module):
         return self.layers[-1](x)
 
 
-def train_model(model: pt.nn.Module, features_train: pt.Tensor, labels_train: pt.Tensor, features_val: pt.Tensor,
-                labels_val: pt.Tensor, epochs: int = 2500, lr: float = 0.01, batch_size: int = 25, stop: float = -1e-7,
-                save_model: bool = True, save_name: str = "bestModel", save_dir: str = "env_model") -> Tuple[list, list]:
+def train_model(model: pt.nn.Module, dataloader_train: DataLoader, dataloader_val: DataLoader, epochs: int = 2500,
+                lr: float = 0.01, stop: float = -1e-7, save_model: bool = True, save_name: str = "bestModel",
+                save_dir: str = "env_model") -> Tuple[list, list]:
     """
     train environment model based on sampled trajectories
 
     :param model: environment model
-    :param features_train: features for training
-    :param labels_train: labels for training
-    :param features_val: features for validation
-    :param labels_val: labels for validation
+    :param dataloader_train: dataloader for training
+    :param dataloader_val: dataloader for validation
     :param epochs: number of epochs for training
     :param lr: learning rate
-    :param batch_size: batch size
     :param stop: if avg. gradient of validation loss reaches this value, the training is aborted
     :param save_model: option to save best model, default is True
     :param save_dir: path to directory where models should be saved
@@ -145,12 +142,6 @@ def train_model(model: pt.nn.Module, features_train: pt.Tensor, labels_train: pt
     best_val_loss, best_train_loss = 1.0e5, 1.0e5
     training_loss, validation_loss = [], []
 
-    # create dataset & dataloader -> dimensions always: [batch_size, N_features (or N_labels)]
-    dataset_train = TensorDataset(features_train, labels_train)
-    dataset_val = TensorDataset(features_val, labels_val)
-    dataloader_train = DataLoader(dataset_train, batch_size=batch_size, shuffle=True, drop_last=False)
-    dataloader_val = DataLoader(dataset_val, batch_size=batch_size, shuffle=True, drop_last=False)
-
     for epoch in range(1, epochs + 1):
         t_loss_tmp, v_loss_tmp = [], []
 
@@ -163,7 +154,7 @@ def train_model(model: pt.nn.Module, features_train: pt.Tensor, labels_train: pt
             loss_train.backward()
             optimizer.step()
             t_loss_tmp.append(loss_train.item())
-        training_loss.append(pt.mean(pt.tensor(t_loss_tmp)))
+        training_loss.append(pt.mean(pt.tensor(t_loss_tmp)).to("cpu"))
 
         # validation loop
         with pt.no_grad():
@@ -171,7 +162,7 @@ def train_model(model: pt.nn.Module, features_train: pt.Tensor, labels_train: pt
                 prediction = model(feature).squeeze()
                 loss_val = criterion(prediction, label.squeeze())
                 v_loss_tmp.append(pt.mean(loss_val).item())
-        validation_loss.append(pt.mean(pt.tensor(v_loss_tmp)))
+        validation_loss.append(pt.mean(pt.tensor(v_loss_tmp)).to("cpu"))
 
         scheduler.step(metrics=validation_loss[-1])
 
@@ -277,19 +268,14 @@ def load_trajectory_data(files: list, len_traj: int, n_probes: int):
     return cl, cd, actions, states, alpha, beta, rewards
 
 
-def split_data(files: list, len_traj: int, n_probes: int, n_train: float = 0.7, buffer_size: int = 10,
-               n_e_cfd: int = 0) -> dict:
+def check_cfd_data(files: list, len_traj: int, n_probes: int, buffer_size: int = 10, n_e_cfd: int = 0) -> dict:
     """
     load the trajectory data, split the trajectories into training, validation- and test data (for sampling initial
     states), normalize all the data to [0, 1]
 
-    Note: since generating trajectories for 5 episodes and N_buffer_size requires a large amount of data, the portion
-          for the test data is set in the order to the amount of validation data
-
     :param files: list containing the file names of the last two episodes run in CFD environment
     :param len_traj: length of the trajectory, 1sec CFD = 100 epochs
     :param n_probes: number of probes placed in the flow field
-    :param n_train: amount of the loaded data used for train the environment models (training data)
     :param buffer_size: current buffer size
     :param n_e_cfd: number of currently available episodes run in CFD
     :return: dict containing the loaded, sorted and normalized data as well as the data for training- and validation
@@ -336,27 +322,6 @@ def split_data(files: list, len_traj: int, n_probes: int, n_train: float = 0.7, 
     # save states, actions, cl and cd for sampling the initial states later (easier if data is not already split up)
     data["actions"], data["cl"], data["cd"] = actions, cl, cd
     data["states"], data["alpha"], data["beta"], data["rewards"] = states, alpha[:, ok], beta[:, ok], rewards[:, ok]
-
-    # split dataset into training data and validation data
-    n_train = int(n_train * actions.size()[1])
-    n_val = actions.size()[1] - n_train
-
-    # randomly select indices of trajectories
-    samples = pt.ones(actions.shape[-1])
-    try:
-        idx_train = pt.multinomial(samples, n_train)
-        idx_val = pt.multinomial(samples, n_val)
-    except RuntimeError as rt:
-        print(f"[env_rotating_cylinder.py]: {rt}, only one CFD trajectory left, can't be split into training and"
-              f" validation data...\n Aborting training!")
-        exit(0)
-
-    # assign train- and validation data based on chosen indices
-    data["actions_train"], data["actions_val"] = actions[:, idx_train], actions[:, idx_val]
-    data["states_train"], data["states_val"] = states[:, :, idx_train], states[:, :, idx_val]
-    data["cl_train"], data["cl_val"] = cl[:, idx_train], cl[:, idx_val]
-    data["cd_train"], data["cd_val"] = cd[:, idx_train], cd[:, idx_val]
-    data["alpha_val"], data["beta_val"], data["rewards_val"] = alpha[:, idx_val], beta[:, idx_val], rewards[:, idx_val]
 
     return data
 
@@ -485,6 +450,7 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
     status = check_trajectories(cl=cl_rescaled, cd=cd_rescaled, actions=act_rescaled, alpha=traj_alpha[0, :],
                                 beta=traj_beta[0, :])
 
+    # TODO: reward fct for fluidic pinball?
     output = {"states": p_rescaled, "cl": cl_rescaled, "cd": cd_rescaled, "alpha": traj_alpha[0, :],
               "beta": traj_beta[0, :], "actions": act_rescaled, "generated_by": "env_models",
               "rewards": 3.0 - (cd_rescaled + 0.1 * cl_rescaled.abs())}
@@ -492,7 +458,7 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
     return output, status
 
 
-def train_env_models(path: str, n_t_input: int, n_probes: int, observations: dict, n_neurons: int = 100,
+def train_env_models(path: str, n_t_input: int, n_probes: int, data_cl_p: list, data_cd: list, n_neurons: int = 100,
                      n_layers: int = 3, n_neurons_cd: int = 50, n_layers_cd: int = 5, epochs: int = 2500,
                      epochs_cd: int = 2500, load: bool = False,
                      model_no: int = 0) -> EnvironmentModel and EnvironmentModel and list:
@@ -503,7 +469,8 @@ def train_env_models(path: str, n_t_input: int, n_probes: int, observations: dic
     :param path: path to the directory where the training is currently running
     :param n_t_input: number as input time steps for the environment models
     :param n_probes: number of probes places in the flow field
-    :param observations: all the trajectory data, split into training- and validation data
+    :param data_cl_p: [dataloader_train, dataloader_val]
+    :param data_cd: [dataloader_train, dataloader_val]
     :param n_neurons: number of neurons per layer for the cl-p-environment model
     :param n_layers: number of hidden layers for the cl-p-environment model
     :param n_neurons_cd: number of neurons per layer for the cd-environment model
@@ -520,7 +487,7 @@ def train_env_models(path: str, n_t_input: int, n_probes: int, observations: dic
     # train and validate environment models with CFD data from the previous episode
     print(f"start training the environment model no. {model_no} for cl & p")
 
-    # initialize environment networks
+    # initialize environment networks TODO: generalize n_actions, n_cl, n_cd -> fluidic pinball
     env_model_cl_p = EnvironmentModel(n_inputs=n_t_input * (n_probes + 3), n_outputs=n_probes + 1, n_neurons=n_neurons,
                                       n_layers=n_layers)
     env_model_cd = EnvironmentModel(n_inputs=n_t_input * (n_probes + 3), n_outputs=1, n_neurons=n_neurons_cd,
@@ -533,20 +500,14 @@ def train_env_models(path: str, n_t_input: int, n_probes: int, observations: dic
         env_model_cd.load_state_dict(pt.load("".join([path, "/cd_model/", f"bestModel_no0_val.pt"])))
 
     # train environment models
-    train_loss, val_loss = train_model(env_model_cl_p, features_train=observations["features_train_cl_p"],
-                                       features_val=observations["features_val_cl_p"],
-                                       labels_train=observations["labels_train_cl_p"],
-                                       labels_val=observations["labels_val_cl_p"],
+    train_loss, val_loss = train_model(env_model_cl_p, dataloader_train=data_cl_p[0], dataloader_val=data_cl_p[1],
                                        save_dir="".join([path, "/cl_p_model/"]), epochs=epochs,
                                        save_name=f"bestModel_no{model_no}")
 
     print(f"starting training for cd model no. {model_no}")
-    train_loss_cd, val_loss_cd = train_model(env_model_cd, features_train=observations["features_train_cl_p"],
-                                             features_val=observations["features_val_cd"],
-                                             labels_train=observations["labels_train_cd"],
-                                             labels_val=observations["labels_val_cd"],
-                                             save_name=f"bestModel_no{model_no}",
-                                             save_dir="".join([path, "/cd_model/"]), epochs=epochs_cd)
+    train_loss_cd, val_loss_cd = train_model(env_model_cd, dataloader_train=data_cd[0], dataloader_val=data_cd[1],
+                                             save_name=f"bestModel_no{model_no}", epochs=epochs_cd,
+                                             save_dir="".join([path, "/cd_model/"]))
 
     return env_model_cl_p, env_model_cd, [[train_loss, train_loss_cd], [val_loss, val_loss_cd]]
 
@@ -632,17 +593,13 @@ def fill_buffer_from_models(env_model_cl_p: list, env_model_cd: list, episode: i
         print(f"start filling buffer with trajectory {counter + 1}/{buffer_size} using environment models")
 
         # for each trajectory sample input states from all available data within the CFD buffer
-        traj_no = pt.randint(low=0, high=observation["cd"].size()[1], size=(1, 1)).item()
+        no = pt.randint(low=0, high=observation["cd"].size()[1], size=(1, 1)).item()
 
         # then predict the trajectory (the env. models are loaded in predict trajectory function)
-        pred, ok = predict_trajectories(env_model_cl_p, env_model_cd, episode, path,
-                                        observation["states"][:n_input, :, traj_no],
-                                        observation["cd"][:n_input, traj_no],
-                                        observation["cl"][:n_input, traj_no],
-                                        observation["actions"][:n_input, traj_no],
-                                        observation["alpha"][:n_input, traj_no],
-                                        observation["beta"][:n_input, traj_no],
-                                        n_probes, n_input, min_max, len_traj)
+        pred, ok = predict_trajectories(env_model_cl_p, env_model_cd, episode, path, observation["states"][:, :, no],
+                                        observation["cd"][:, no], observation["cl"][:, no],
+                                        observation["actions"][:, no], observation["alpha"][:, no],
+                                        observation["beta"][:, no], n_probes, n_input, min_max, len_traj)
 
         # only add trajectory to buffer if the values make sense, otherwise discard it
         if ok[0]:
@@ -651,14 +608,10 @@ def fill_buffer_from_models(env_model_cl_p: list, env_model_cd: list, episode: i
             # compute the uncertainty of the predictions for the rewards wrt the model number
             for model in range(len(env_model_cl_p)):
                 tmp, _ = predict_trajectories(env_model_cl_p, env_model_cd, episode, path,
-                                              observation["states"][:n_input, :, traj_no],
-                                              observation["cd"][:n_input, traj_no],
-                                              observation["cl"][:n_input, traj_no],
-                                              observation["actions"][:n_input, traj_no],
-                                              observation["alpha"][:n_input, traj_no],
-                                              observation["beta"][:n_input, traj_no],
-                                              n_probes, n_input, min_max, len_traj,
-                                              model_no=model)
+                                              observation["states"][:, :, no], observation["cd"][:, no],
+                                              observation["cl"][:, no], observation["actions"][:, no],
+                                              observation["alpha"][:, no], observation["beta"][:, no],
+                                              n_probes, n_input, min_max, len_traj, model_no=model)
                 r_model_tmp[:, model] = tmp["rewards"]
                 a_model_tmp[:, model] = tmp["actions"]
                 s_model_tmp[:, :, model] = tmp["states"]
@@ -710,6 +663,7 @@ def generate_feature_labels(cd, states: pt.Tensor = None, actions: pt.Tensor = N
               "are not given!")
         exit(0)
 
+    # TODO: generalize n_actions, n_cl, n_cd -> fluidic pinball
     n_traj, shape_input = cd.size()[1], (len_traj-n_t_input, n_t_input * (n_probes + 3))
     feature, label = [], []
     for n in range(n_traj):
@@ -770,44 +724,56 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
             [trained cl-p-ensemble, trained cd-ensemble, train- and validation losses, loaded trajectories from CFD]
     """
     cl_p_ensemble, cd_ensemble, losses = [], [], []
-    obs = split_data(cfd_obs, len_traj=len_traj, n_probes=n_states, buffer_size=buffer, n_e_cfd=len(cfd_obs))
+    obs = check_cfd_data(cfd_obs, len_traj=len_traj, n_probes=n_states, buffer_size=buffer, n_e_cfd=len(cfd_obs))
 
     # create feature-label pairs for all possible input states of given data
-    ft_train_cl_p, labels_train_cl_p = generate_feature_labels(states=obs["states_train"], cd=obs["cd_train"],
-                                                               actions=obs["actions_train"], cl=obs["cl_train"],
-                                                               len_traj=len_traj, n_t_input=n_time_steps,
-                                                               n_probes=n_states)
-    ft_val_cl_p, labels_val_cl_p = generate_feature_labels(states=obs["states_val"], cd=obs["cd_val"],
-                                                           actions=obs["actions_val"], cl=obs["cl_val"],
-                                                           len_traj=len_traj, n_t_input=n_time_steps, n_probes=n_states)
+    features_cl_p, labels_cl_p = generate_feature_labels(states=obs["states"], cd=obs["cd"], actions=obs["actions"],
+                                                         cl=obs["cl"], len_traj=len_traj, n_t_input=n_time_steps,
+                                                         n_probes=n_states)
 
-    # features for cd models are same as for cl-p models
-    labels_train_cd = generate_feature_labels(cd=obs["cd_train"], n_t_input=n_time_steps, len_traj=len_traj,
-                                              n_probes=n_states, cd_model=True)
-    labels_val_cd = generate_feature_labels(cd=obs["cd_val"], len_traj=len_traj, n_t_input=n_time_steps,
-                                            n_probes=n_states, cd_model=True)
+    labels_cd = generate_feature_labels(cd=obs["cd"], len_traj=len_traj, n_t_input=n_time_steps, n_probes=n_states,
+                                        cd_model=True)
 
-    # save observations for PPO-training
+    # save first N time steps of CFD trajectories in order to sample initial states for MB-episodes
     init_data = {"min_max_states": obs["min_max_states"], "min_max_actions": obs["min_max_actions"],
-                 "min_max_cl": obs["min_max_cl"], "min_max_cd": obs["min_max_cd"], "alpha": obs["alpha_val"],
-                 "beta": obs["beta_val"], "cl": obs["cl_val"], "cd": obs["cd_val"], "actions": obs["actions_val"],
-                 "states": obs["states_val"], "rewards": obs["rewards_val"]}
+                 "min_max_cl": obs["min_max_cl"], "min_max_cd": obs["min_max_cd"],
+                 "alpha": obs["alpha"][:n_time_steps, :], "beta": obs["beta"][:n_time_steps, :],
+                 "cl": obs["cl"][:n_time_steps, :], "cd": obs["cd"][:n_time_steps, :],
+                 "actions": obs["actions"][:n_time_steps, :], "states": obs["states"][:n_time_steps, :, :],
+                 "rewards": obs["rewards"][:n_time_steps, :]}
 
-    # overwrite the obs dict with feature-label pairs and free up some memory
-    obs = {"labels_train_cl_p": labels_train_cl_p, "labels_train_cd": labels_train_cd, "labels_val_cd": labels_val_cd,
-           "features_train_cl_p": ft_train_cl_p, "features_train_cd": ft_train_cl_p, "labels_val_cl_p": labels_val_cl_p,
-           "features_val_cl_p": ft_val_cl_p, "features_val_cd": ft_val_cl_p}
+    # create dataset for both models -> features of cd-models the same as for cl-p-models
+    # device = ["cuda" if pt.cuda.is_available() else "cpu"][0]     # my GPU is not supported by PyTorch version used
+    device = "cpu"
+    cl_p_data = TensorDataset(features_cl_p.to(device), labels_cl_p.to(device))
+    cd_data = TensorDataset(features_cl_p.to(device), labels_cd.to(device))
 
-    del labels_train_cd, labels_val_cd, labels_train_cl_p, ft_train_cl_p, ft_val_cl_p, labels_val_cl_p
+    # split into training ind validation data -> 75% training, 25% validation data
+    n_train = int(0.75 * features_cl_p.size()[0])
+    n_val = features_cl_p.size()[0] - n_train
+    train_cl_p, val_cl_p = pt.utils.data.random_split(cl_p_data, [n_train, n_val])
+    train_cd, val_cd = pt.utils.data.random_split(cd_data, [n_train, n_val])
+
+    # create dataloader and free up some memory
+    loader_train = DataLoader(train_cl_p, batch_size=25, shuffle=True, drop_last=False)
+    loader_val = DataLoader(val_cl_p, batch_size=25, shuffle=True, drop_last=False)
+    loader_train_cd = DataLoader(train_cd, batch_size=25, shuffle=True, drop_last=False)
+    loader_val_cd = DataLoader(val_cd, batch_size=25, shuffle=True, drop_last=False)
+
+    del train_cl_p, val_cl_p, train_cd, val_cd, obs, features_cl_p, labels_cl_p, labels_cd
 
     # train 1st model in 1st episode in ensemble with 5000 epochs, for e > 0: re-train previous models with 500 epochs
     if not load:
-        env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states, observations=obs,
+        env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states,
+                                                              data_cl_p=[loader_train, loader_val],
+                                                              data_cd=[loader_train_cd, loader_val_cd],
                                                               load=load, model_no=0, n_neurons=n_neurons_cl_p,
                                                               n_layers=n_layers_cl_p, n_neurons_cd=n_neurons_cd,
                                                               n_layers_cd=n_layers_cd)
     else:
-        env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states, observations=obs,
+        env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states,
+                                                              data_cl_p=[loader_train, loader_val],
+                                                              data_cd=[loader_train_cd, loader_val_cd],
                                                               load=True, model_no=0, epochs=1000, epochs_cd=1000,
                                                               n_neurons=n_neurons_cl_p, n_layers=n_layers_cl_p,
                                                               n_neurons_cd=n_neurons_cd, n_layers_cd=n_layers_cd)
@@ -818,7 +784,9 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
 
     for model in range(1, n_models):
         # train each new model in the ensemble initialized with the 1st model trained above with 250 epochs
-        env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states, observations=obs,
+        env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states,
+                                                              data_cl_p=[loader_train, loader_val],
+                                                              data_cd=[loader_train_cd, loader_val_cd],
                                                               epochs=e_re_train, epochs_cd=e_re_train_cd, load=True,
                                                               model_no=model, n_neurons=n_neurons_cl_p,
                                                               n_layers=n_layers_cl_p, n_neurons_cd=n_neurons_cd,
