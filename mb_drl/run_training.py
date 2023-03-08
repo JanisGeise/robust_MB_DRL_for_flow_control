@@ -288,8 +288,6 @@ if __name__ == "__main__":
         # test MB-DRL on local machine
         d_args = RunTrainingInDebugger(episodes=80, runners=4, buffer=4, finish=5, n_input_time_steps=30, seed=0)
         assert d_args.finish > 4, "finish time needs to be > 4s, (the first 4sec are uncontrolled)"
-        assert d_args.buffer >= 4, f"buffer needs to >= 4 in order to split trajectories for training and sampling" \
-                                   f" initial states"
 
         # run PPO training
         main(d_args)

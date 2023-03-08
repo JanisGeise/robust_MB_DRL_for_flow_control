@@ -36,7 +36,7 @@ class SetupEnvironmentModel:
         :return: bool if training should be switch back to CFD in order to update the environment models
         """
         # in the 1st two MB episodes of training, policy loss has no or just one entry, so diff can't be computed
-        if len(self.policy_loss[-2:]) < 2:
+        if len(self.policy_loss) < 2:
             switch = 0
         else:
             # mask difference of policy loss for each model -> 1 if policy improved, 0 if not
@@ -52,7 +52,7 @@ class SetupEnvironmentModel:
             return True
 
     def append_cfd_obs(self, e):
-        self.obs_cfd.append("".join([self.path, f"/observations_{e}.pt"]))
+        self.obs_cfd.append(f"{self.path}/observations_{e}.pt")
 
     def save_losses(self, episode, loss):
         # save train- and validation losses of the environment models
@@ -63,10 +63,10 @@ class SetupEnvironmentModel:
         else:
             losses = {"train_loss_cl_p": loss[:, 0, 0, :], "train_loss_cd": loss[:, 0, 1, :],
                       "val_loss_cl_p": loss[:, 1, 0, :], "val_loss_cd": loss[:, 1, 1, :]}
-            self.save(episode, losses, name="/env_model_loss_")
+            self.save(episode, losses, name="/env_model_loss")
 
-    def save(self, episode, data, name: str = "/observations_"):
-        pt.save(data, "".join([self.path, name, f"{episode}.pt"]))
+    def save(self, episode, data, name: str = "/observations"):
+        pt.save(data, f"{self.path}/{name}_{episode}.pt")
 
     def reset(self, episode):
         self.policy_loss = []
@@ -240,14 +240,11 @@ def load_trajectory_data(files: list, len_traj: int, n_probes: int):
 
     for observation in range(len(observations)):
         for j in range(len(observations[observation])):
-            # in case a trajectory has no values in it, drlfoam returns emtpy dict
-            if not bool(observations[observation][j]):
-                pass
-            # omit failed trajectories in case the trajectory only converged partly
-            elif observations[observation][j]["actions"].size()[0] < len_traj:
+            # omit failed or partly converged trajectories
+            if not bool(observations[observation][j]) or observations[observation][j]["actions"].size()[0] < len_traj:
                 pass
             # for some reason sometimes the trajectories are 1 entry too long, in that case ignore the last value
-            elif observations[observation][j]["actions"].size()[0] > len_traj:
+            else:
                 actions[:, n_col] = observations[observation][j]["actions"][:len_traj]
                 cl[:, n_col] = observations[observation][j]["cl"][:len_traj]
                 cd[:, n_col] = observations[observation][j]["cd"][:len_traj]
@@ -255,14 +252,6 @@ def load_trajectory_data(files: list, len_traj: int, n_probes: int):
                 beta[:, n_col] = observations[observation][j]["beta"][:len_traj]
                 rewards[:, n_col] = observations[observation][j]["rewards"][:len_traj]
                 states[:, :, n_col] = observations[observation][j]["states"][:len_traj][:]
-            else:
-                actions[:, n_col] = observations[observation][j]["actions"]
-                cl[:, n_col] = observations[observation][j]["cl"]
-                cd[:, n_col] = observations[observation][j]["cd"]
-                alpha[:, n_col] = observations[observation][j]["alpha"]
-                beta[:, n_col] = observations[observation][j]["beta"]
-                rewards[:, n_col] = observations[observation][j]["rewards"]
-                states[:, :, n_col] = observations[observation][j]["states"][:]
             n_col += 1
 
     return cl, cd, actions, states, alpha, beta, rewards
@@ -314,14 +303,11 @@ def check_cfd_data(files: list, len_traj: int, n_probes: int, buffer_size: int =
         exit(0)
 
     # normalize the data to interval of [0, 1] (except alpha and beta)
-    states, data["min_max_states"] = normalize_data(states[:, :, ok_states])
-    actions, data["min_max_actions"] = normalize_data(actions[:, ok])
-    cl, data["min_max_cl"] = normalize_data(cl[:, ok])
-    cd, data["min_max_cd"] = normalize_data(cd[:, ok])
-
-    # save states, actions, cl and cd for sampling the initial states later (easier if data is not already split up)
-    data["actions"], data["cl"], data["cd"] = actions, cl, cd
-    data["states"], data["alpha"], data["beta"], data["rewards"] = states, alpha[:, ok], beta[:, ok], rewards[:, ok]
+    data["states"], data["min_max_states"] = normalize_data(states[:, :, ok_states])
+    data["actions"], data["min_max_actions"] = normalize_data(actions[:, ok])
+    data["cl"], data["min_max_cl"] = normalize_data(cl[:, ok])
+    data["cd"], data["min_max_cd"] = normalize_data(cd[:, ok])
+    data["alpha"], data["beta"], data["rewards"] = alpha[:, ok], beta[:, ok], rewards[:, ok]
 
     return data
 
@@ -391,11 +377,12 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
 
     # use batch for prediction, because batch normalization only works for batch size > 1
     # -> at least 2 trajectories required
-    batch_size = 2
+    batch_size, dev = 2, ["cuda" if pt.cuda.is_available() else "cpu"][0]
     shape = (batch_size, len_trajectory)
-    traj_cd, traj_cl, traj_alpha, traj_beta, traj_actions, traj_p = pt.zeros(shape), pt.zeros(shape), pt.zeros(shape),\
-                                                                    pt.zeros(shape), pt.zeros(shape), \
-                                                                    pt.zeros((batch_size, len_trajectory, n_probes))
+    traj_cd, traj_cl, traj_alpha, traj_beta, traj_actions, traj_p = pt.zeros(shape).to(dev), pt.zeros(shape).to(dev),\
+                                                                    pt.zeros(shape).to(dev), pt.zeros(shape).to(dev),\
+                                                                    pt.zeros(shape).to(dev), \
+                                                                    pt.zeros((batch_size, len_trajectory, n_probes)).to(dev)
     for i in range(batch_size):
         traj_cd[i, :n_input_steps] = cd
         traj_cl[i, :n_input_steps] = cl
@@ -412,7 +399,7 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
                                         traj_cd[:, t:t + n_input_steps].reshape([batch_size, n_input_steps, 1]),
                                         (traj_actions[:, t:t + n_input_steps]).reshape([batch_size, n_input_steps, 1])],
                                        dim=2),
-                             start_dim=1)
+                             start_dim=1).to(dev)
 
         if model_no is None:
             # randomly choose an environment model to make a prediction if no model is specified
@@ -431,9 +418,9 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
         traj_cl[:, t + n_input_steps] = prediction_cl_p[:, -1]
 
         # use predicted (new) state to get an action for both environment models as new input
-        # note: the policy network uses the real states as input (not normalized to [0, 1])
+        # note: policy network uses real states as input (not scaled to [0, 1]), policy training currently on cpu
         s_real = denormalize_data(traj_p[:, t + n_input_steps, :], min_max["states"])
-        tmp_pred = policy_model(s_real).squeeze().detach()
+        tmp_pred = policy_model(s_real.to("cpu")).squeeze().detach()
         traj_alpha[:, t + n_input_steps], traj_beta[:, t + n_input_steps] = tmp_pred[:, 0], tmp_pred[:, 1]
 
         # sample the value for omega (scaled to [0, 1])
@@ -441,18 +428,18 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
         traj_actions[:, t + n_input_steps] = beta_distr.sample()
 
     # re-scale everything for PPO-training and sort into dict, therefore always use the first trajectory in the batch
-    act_rescaled = denormalize_data(traj_actions, min_max["actions"])[0, :]
-    cl_rescaled = denormalize_data(traj_cl, min_max["cl"])[0, :]
-    cd_rescaled = denormalize_data(traj_cd, min_max["cd"])[0, :]
-    p_rescaled = denormalize_data(traj_p, min_max["states"])[0, :, :]
+    act_rescaled = denormalize_data(traj_actions, min_max["actions"])[0, :].to("cpu")
+    cl_rescaled = denormalize_data(traj_cl, min_max["cl"])[0, :].to("cpu")
+    cd_rescaled = denormalize_data(traj_cd, min_max["cd"])[0, :].to("cpu")
+    p_rescaled = denormalize_data(traj_p, min_max["states"])[0, :, :].to("cpu")
 
     # sanity check if the created trajectories make sense
     status = check_trajectories(cl=cl_rescaled, cd=cd_rescaled, actions=act_rescaled, alpha=traj_alpha[0, :],
                                 beta=traj_beta[0, :])
 
     # TODO: reward fct for fluidic pinball?
-    output = {"states": p_rescaled, "cl": cl_rescaled, "cd": cd_rescaled, "alpha": traj_alpha[0, :],
-              "beta": traj_beta[0, :], "actions": act_rescaled, "generated_by": "env_models",
+    output = {"states": p_rescaled, "cl": cl_rescaled, "cd": cd_rescaled, "alpha": traj_alpha[0, :].to("cpu"),
+              "beta": traj_beta[0, :].to("cpu"), "actions": act_rescaled, "generated_by": "env_models",
               "rewards": 3.0 - (cd_rescaled + 0.1 * cl_rescaled.abs())}
 
     return output, status
@@ -493,6 +480,9 @@ def train_env_models(path: str, n_t_input: int, n_probes: int, data_cl_p: list, 
     env_model_cd = EnvironmentModel(n_inputs=n_t_input * (n_probes + 3), n_outputs=1, n_neurons=n_neurons_cd,
                                     n_layers=n_layers_cd)
 
+    # move model to GPU if available
+    device = ["cuda" if pt.cuda.is_available() else "cpu"][0]
+
     # load environment models trained in the previous CFD episode
     if load:
         # for model-ensemble: all models in ensemble are trained using the 1st model (no. 0) as starting point
@@ -500,14 +490,14 @@ def train_env_models(path: str, n_t_input: int, n_probes: int, data_cl_p: list, 
         env_model_cd.load_state_dict(pt.load("".join([path, "/cd_model/", f"bestModel_no0_val.pt"])))
 
     # train environment models
-    train_loss, val_loss = train_model(env_model_cl_p, dataloader_train=data_cl_p[0], dataloader_val=data_cl_p[1],
-                                       save_dir="".join([path, "/cl_p_model/"]), epochs=epochs,
-                                       save_name=f"bestModel_no{model_no}")
+    train_loss, val_loss = train_model(env_model_cl_p.to(device), dataloader_train=data_cl_p[0],
+                                       dataloader_val=data_cl_p[1], save_dir="".join([path, "/cl_p_model/"]),
+                                       epochs=epochs, save_name=f"bestModel_no{model_no}")
 
     print(f"starting training for cd model no. {model_no}")
-    train_loss_cd, val_loss_cd = train_model(env_model_cd, dataloader_train=data_cd[0], dataloader_val=data_cd[1],
-                                             save_name=f"bestModel_no{model_no}", epochs=epochs_cd,
-                                             save_dir="".join([path, "/cd_model/"]))
+    train_loss_cd, val_loss_cd = train_model(env_model_cd.to(device), dataloader_train=data_cd[0],
+                                             dataloader_val=data_cd[1], save_name=f"bestModel_no{model_no}",
+                                             epochs=epochs_cd, save_dir="".join([path, "/cd_model/"]))
 
     return env_model_cl_p, env_model_cd, [[train_loss, train_loss_cd], [val_loss, val_loss_cd]]
 
@@ -743,8 +733,8 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
                  "rewards": obs["rewards"][:n_time_steps, :]}
 
     # create dataset for both models -> features of cd-models the same as for cl-p-models
-    # device = ["cuda" if pt.cuda.is_available() else "cpu"][0]     # my GPU is not supported by PyTorch version used
-    device = "cpu"
+    # for NVIDIA GeForce RTX 3050 Ti -> PyTorch 1.13.1 & CUDA 11.7 required
+    device = ["cuda" if pt.cuda.is_available() else "cpu"][0]
     cl_p_data = TensorDataset(features_cl_p.to(device), labels_cl_p.to(device))
     cd_data = TensorDataset(features_cl_p.to(device), labels_cd.to(device))
 
