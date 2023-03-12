@@ -190,9 +190,8 @@ def main(args):
                 cl_p_models, cd_models, l, obs = wrapper_train_env_model_ensemble(training_path, env_model.obs_cfd,
                                                                                   env_model.len_traj, env.n_states,
                                                                                   buffer_size, env_model.n_models,
-                                                                                  load=True, e_re_train=100,
-                                                                                  e_re_train_cd=100,
-                                                                                  n_time_steps=env_model.t_input)
+                                                                                  n_time_steps=env_model.t_input,
+                                                                                  load=True)
 
             else:
                 # save the model-generated trajectories

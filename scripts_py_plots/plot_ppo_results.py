@@ -464,6 +464,10 @@ if __name__ == "__main__":
         else:
             setup["legend"] = [f"seed = {c}" for c in range(len(averaged_data["len_traj"]))]
 
+    # print info amount CFD episodes, assuming 1st case is MF
+    for i in range(1, len(averaged_data["MF_episodes"])):
+        print(f"{averaged_data['MF_episodes'][i]} CFD episodes for case {i}")
+
     # plot variance of the beta-distribution wrt episodes
     plot_variance_of_beta_dist(setup, averaged_data["var_beta_fct"], n_cases=len(setup["case_name"]))
 

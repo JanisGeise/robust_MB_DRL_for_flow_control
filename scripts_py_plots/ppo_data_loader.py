@@ -29,12 +29,10 @@ def load_trajectory_data(path: str) -> dict:
     files = natsorted(glob(path + "observations_*.pkl"))
     observations = [pickle.load(open(file, "rb")) for file in files]
 
-    # in new version of drlfoam: observations are in stored in '.pt' files, not '.pkl', so try to load them in case
-    # 'observations' is empty
+    # in new version of drlfoam: observations are in stored in '.pt' files, not '.pkl'
     if not observations:
         files = natsorted(glob(path + "observations_*.pt"))
         observations = [pt.load(open(file, "rb")) for file in files]
-
     traj_length, counter, mb_episodes = len(observations[0][0]["actions"]), 0, 0
 
     # sort the trajectories from all workers wrt the episode
@@ -58,6 +56,7 @@ def load_trajectory_data(path: str) -> dict:
             # omit failed trajectories in case the trajectory only converged partly
             elif observations[episode][worker]["actions"].size()[0] < traj_length:
                 counter += 1
+                # print(observations[episode][worker]["actions"].size()[0])
                 continue
             # in case there exist more points in one trajectory, just take the first len_traj ones (happens sometimes)
             elif observations[episode][worker]["actions"].size()[0] > traj_length:
@@ -98,6 +97,7 @@ def load_trajectory_data(path: str) -> dict:
 
     # add ratio (MB / MF) episodes = MB_episodes / (all_episodes - MB_episodes)
     data["MB_MF"] = mb_episodes / (len(observations) - mb_episodes)
+    data["MF_episodes"] = len(observations) - mb_episodes
 
     # import and sort training- and validation losses of the environment models, if MB-DRL was used
     if len(glob(path + "env_model_loss_*.pkl")) > 0:
@@ -168,7 +168,7 @@ def average_results_for_each_case(data: list) -> dict:
                 "mean_rewards": [], "std_rewards": [], "mean_alpha": [], "std_alpha": [], "mean_beta": [],
                 "std_beta": [], "tot_mean_rewards": [], "tot_std_rewards": [], "tot_mean_cd": [], "tot_std_cd": [],
                 "tot_mean_cl": [], "tot_std_cl": [], "var_beta_fct": [], "buffer_size": [], "len_traj": [],
-                "ratio_MB_MF": []}
+                "ratio_MB_MF": [], "MF_episodes": []}
     names, keys, losses = {}, ["cl", "cd", "actions", "rewards", "alpha", "beta"], []
 
     for case in range(len(data)):
@@ -202,6 +202,7 @@ def average_results_for_each_case(data: list) -> dict:
 
         if "ratio_MB_MF" in data[case]:
             avg_data["ratio_MB_MF"].append(data[case]["ratio_MB_MF"])
+            avg_data["MF_episodes"].append(data[case]["MF_episodes"])
 
         # if environment models are used, get mean and std. of train- and validation losses vs. epoch
         if "train_loss_cd" in data[case]:
@@ -238,7 +239,8 @@ def merge_results_for_diff_seeds(data: list, n_seeds: int) -> dict:
 
     merged_data = {"n_workers": n_traj, "network_data": [data[seed]["network_data"] for seed in range(len(data))],
                    "n_seeds": n_seeds, "cl": pt.zeros(shape), "cd": pt.zeros(shape), "actions": pt.zeros(shape),
-                   "rewards": pt.zeros(shape), "alpha": pt.zeros(shape), "beta": pt.zeros(shape), "ratio_MB_MF": []}
+                   "rewards": pt.zeros(shape), "alpha": pt.zeros(shape), "beta": pt.zeros(shape), "ratio_MB_MF": [],
+                   "MF_episodes": []}
     keys = ["cl", "cd", "actions", "rewards", "alpha", "beta"]
 
     for seed in range(n_seeds):
@@ -253,6 +255,7 @@ def merge_results_for_diff_seeds(data: list, n_seeds: int) -> dict:
     for i in range(len(data)):
         if "MB_MF" in data[i]:
             merged_data["ratio_MB_MF"].append(data[i]["MB_MF"])
+            merged_data["MF_episodes"].append(data[i]["MF_episodes"])
 
     return merged_data
 

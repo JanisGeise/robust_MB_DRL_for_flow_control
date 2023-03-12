@@ -3,11 +3,11 @@
     as well as functions for loading and sorting the trajectories, training the model ensembles and generating the
     model-based trajectories for the PPO-training.
 """
-import os
 import torch as pt
-from typing import Tuple, Union
+from os import mkdir
+from typing import Tuple
+from os.path import join, exists
 from torch.utils.data import DataLoader, TensorDataset
-
 
 from drlfoam.agent import PPOAgent
 from drlfoam.agent.agent import compute_gae
@@ -23,7 +23,7 @@ class SetupEnvironmentModel:
         self.len_traj = 200
         self.last_cfd = 0
         self.policy_loss = []
-        self.threshold = 0.6
+        self.threshold = 0.5
 
     def determine_switching(self, current_episode: int):
         """
@@ -52,21 +52,21 @@ class SetupEnvironmentModel:
             return True
 
     def append_cfd_obs(self, e):
-        self.obs_cfd.append(f"{self.path}/observations_{e}.pt")
+        self.obs_cfd.append(join(self.path, f"observations_{e}.pt"))
 
     def save_losses(self, episode, loss):
         # save train- and validation losses of the environment models
         if self.n_models == 1:
             losses = {"train_loss_cl_p": loss[0][0], "train_loss_cd": loss[0][1], "val_loss_cl_p": loss[1][0],
                       "val_loss_cd": loss[1][1]}
-            self.save(episode, losses, name="/env_model_loss_")
+            self.save(episode, losses, name="env_model_loss")
         else:
-            losses = {"train_loss_cl_p": loss[:, 0, 0, :], "train_loss_cd": loss[:, 0, 1, :],
-                      "val_loss_cl_p": loss[:, 1, 0, :], "val_loss_cd": loss[:, 1, 1, :]}
-            self.save(episode, losses, name="/env_model_loss")
+            losses = {"train_loss_cl_p": [l[0][0] for l in loss], "train_loss_cd": [l[0][1] for l in loss],
+                      "val_loss_cl_p": [l[1][0] for l in loss], "val_loss_cd": [l[1][1] for l in loss]}
+            self.save(episode, losses, name="env_model_loss")
 
-    def save(self, episode, data, name: str = "/observations"):
-        pt.save(data, f"{self.path}/{name}_{episode}.pt")
+    def save(self, episode, data, name: str = "observations"):
+        pt.save(data, join(self.path, f"{name}_{episode}.pt"))
 
     def reset(self, episode):
         self.policy_loss = []
@@ -114,7 +114,7 @@ class EnvironmentModel(pt.nn.Module):
 
 
 def train_model(model: pt.nn.Module, dataloader_train: DataLoader, dataloader_val: DataLoader, epochs: int = 2500,
-                lr: float = 0.01, stop: float = -1e-7, save_model: bool = True, save_name: str = "bestModel",
+                lr: float = 0.01, stop: float = -1e-7, save_name: str = "bestModel",
                 save_dir: str = "env_model") -> Tuple[list, list]:
     """
     train environment model based on sampled trajectories
@@ -125,13 +125,12 @@ def train_model(model: pt.nn.Module, dataloader_train: DataLoader, dataloader_va
     :param epochs: number of epochs for training
     :param lr: learning rate
     :param stop: if avg. gradient of validation loss reaches this value, the training is aborted
-    :param save_model: option to save best model, default is True
     :param save_dir: path to directory where models should be saved
     :param save_name: name of the model saved, default is number of epoch
     :return: training and validation loss as list
     """
-    if not os.path.exists(save_dir):
-        os.mkdir(save_dir)
+    if not exists(save_dir):
+        mkdir(save_dir)
 
     # optimizer settings
     criterion = pt.nn.MSELoss()
@@ -166,23 +165,16 @@ def train_model(model: pt.nn.Module, dataloader_train: DataLoader, dataloader_va
 
         scheduler.step(metrics=validation_loss[-1])
 
-        # save best models
-        if save_model:
-            if training_loss[-1] < best_train_loss:
-                pt.save(model.state_dict(), f"{save_dir}/{save_name}_train.pt")
-                best_train_loss = training_loss[-1]
-            if validation_loss[-1] < best_val_loss:
-                pt.save(model.state_dict(), f"{save_dir}/{save_name}_val.pt")
-                best_val_loss = validation_loss[-1]
+        if validation_loss[-1] < best_val_loss:
+            pt.save(model.state_dict(), join(save_dir, f"{save_name}_val.pt"))
+            best_val_loss = validation_loss[-1]
 
         # print some info after every 100 epochs
         if epoch % 100 == 0:
             print(f"epoch {epoch}, avg. training loss = {round(pt.mean(pt.tensor(training_loss[-50:])).item(), 8)}, "
                   f"avg. validation loss = {round(pt.mean(pt.tensor(validation_loss[-50:])).item(), 8)}")
 
-        # check every 50 epochs if model performs well on validation data or validation loss converges. Completing 150
-        # epochs ensures that the loss can be plotted later (if all models have different number of epochs,
-        # it's not possible to avg.) while at the same time not running too many unnecessary epochs
+        # check every 50 epochs if model performs well on validation data or validation loss converges
         if epoch % 50 == 0 and epoch >= 150:
             avg_grad_val_loss = (pt.mean(pt.tensor(validation_loss[-5:-1])) -
                                  pt.mean(pt.tensor(validation_loss[-52:-48]))) / 48
@@ -369,11 +361,11 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
     # test model: loop over all test data and predict the trajectories based on given initial state and actions
     # for each model of the ensemble: load the current state dict
     for model in range(len(env_model_cl_p)):
-        env_model_cl_p[model].load_state_dict(pt.load(f"{path}/cl_p_model/bestModel_no{model}_val.pt"))
-        env_model_cd[model].load_state_dict(pt.load(f"{path}/cd_model/bestModel_no{model}_val.pt"))
+        env_model_cl_p[model].load_state_dict(pt.load(join(path, "cl_p_model", f"bestModel_no{model}_val.pt")))
+        env_model_cd[model].load_state_dict(pt.load(join(path, "cd_model", f"bestModel_no{model}_val.pt")))
 
     # load current policy network (saved at the end of the previous episode)
-    policy_model = (pt.jit.load(open(path + f"/policy_trace_{episode - 1}.pt", "rb"))).eval()
+    policy_model = (pt.jit.load(open(join(path, f"policy_trace_{episode - 1}.pt"), "rb"))).eval()
 
     # use batch for prediction, because batch normalization only works for batch size > 1
     # -> at least 2 trajectories required
@@ -447,8 +439,7 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
 
 def train_env_models(path: str, n_t_input: int, n_probes: int, data_cl_p: list, data_cd: list, n_neurons: int = 100,
                      n_layers: int = 3, n_neurons_cd: int = 50, n_layers_cd: int = 5, epochs: int = 2500,
-                     epochs_cd: int = 2500, load: bool = False,
-                     model_no: int = 0) -> EnvironmentModel and EnvironmentModel and list:
+                     epochs_cd: int = 2500, load: bool = False, model_no: int = 0) -> Tuple[EnvironmentModel] and list:
     """
     initializes two environment models, trains and validates them based on the sampled data from the CFD
     environment. The models are trained and validated using the previous 2 episodes run in the CFD environment
@@ -468,11 +459,14 @@ def train_env_models(path: str, n_t_input: int, n_probes: int, data_cl_p: list, 
     :param model_no: number of the environment model within the ensemble
     :return: both environment models (cl-p & cd), as well as the corresponding training- and validation losses
     """
-    if not os.path.exists(path):
-        os.mkdir(path)
+    if not exists(path):
+        mkdir(path)
 
     # train and validate environment models with CFD data from the previous episode
     print(f"start training the environment model no. {model_no} for cl & p")
+
+    # set new seed value for each new model prior initialization
+    pt.manual_seed(model_no)
 
     # initialize environment networks TODO: generalize n_actions, n_cl, n_cd -> fluidic pinball
     env_model_cl_p = EnvironmentModel(n_inputs=n_t_input * (n_probes + 3), n_outputs=n_probes + 1, n_neurons=n_neurons,
@@ -483,21 +477,20 @@ def train_env_models(path: str, n_t_input: int, n_probes: int, data_cl_p: list, 
     # move model to GPU if available
     device = ["cuda" if pt.cuda.is_available() else "cpu"][0]
 
-    # load environment models trained in the previous CFD episode
+    # load environment models trained in the previous CFD episode as starting point
     if load:
-        # for model-ensemble: all models in ensemble are trained using the 1st model (no. 0) as starting point
-        env_model_cl_p.load_state_dict(pt.load("".join([path, "/cl_p_model/", f"bestModel_no0_val.pt"])))
-        env_model_cd.load_state_dict(pt.load("".join([path, "/cd_model/", f"bestModel_no0_val.pt"])))
+        env_model_cl_p.load_state_dict(pt.load(join(path, "cl_p_model", f"bestModel_no{model_no}_val.pt")))
+        env_model_cd.load_state_dict(pt.load(join(path, "cd_model", f"bestModel_no{model_no}_val.pt")))
 
     # train environment models
     train_loss, val_loss = train_model(env_model_cl_p.to(device), dataloader_train=data_cl_p[0],
-                                       dataloader_val=data_cl_p[1], save_dir="".join([path, "/cl_p_model/"]),
+                                       dataloader_val=data_cl_p[1], save_dir=join(path, "cl_p_model"),
                                        epochs=epochs, save_name=f"bestModel_no{model_no}")
 
     print(f"starting training for cd model no. {model_no}")
     train_loss_cd, val_loss_cd = train_model(env_model_cd.to(device), dataloader_train=data_cd[0],
                                              dataloader_val=data_cd[1], save_name=f"bestModel_no{model_no}",
-                                             epochs=epochs_cd, save_dir="".join([path, "/cd_model/"]))
+                                             epochs=epochs_cd, save_dir=join(path, "cd_model"))
 
     return env_model_cl_p, env_model_cd, [[train_loss, train_loss_cd], [val_loss, val_loss_cd]]
 
@@ -688,11 +681,9 @@ def generate_feature_labels(cd, states: pt.Tensor = None, actions: pt.Tensor = N
 
 
 def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: int, n_states: int, buffer: int,
-                                     n_models: int, n_time_steps: int = 30, e_re_train: int = 150,
-                                     e_re_train_cd: int = 150, load: bool = False, n_layers_cl_p: int = 3,
+                                     n_models: int, n_time_steps: int = 30, load: bool = False, n_layers_cl_p: int = 3,
                                      n_layers_cd: int = 5, n_neurons_cl_p: int = 100,
-                                     n_neurons_cd: int = 50) -> Tuple[list, list, pt.Tensor, dict] \
-                                                                or Tuple[list, list, list, dict]:
+                                     n_neurons_cd: int = 50) -> Tuple[list, list, list, dict]:
     """
     wrapper function for train the ensemble of environment models
 
@@ -703,8 +694,6 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
     :param buffer: buffer size
     :param n_models: number of environment models in the ensemble
     :param n_time_steps: number as input time steps for the environment models
-    :param e_re_train:number of episodes for re-training the cl-p-models if no valid trajectories could be generated
-    :param e_re_train_cd: number of episodes for re-training the cd-models if no valid trajectories could be generated
     :param load: flag if 1st model in ensemble is trained from scratch or if previous model is used as initialization
     :param n_layers_cl_p: number of neurons per layer for the cl-p-environment model
     :param n_neurons_cl_p: number of hidden layers for the cl-p-environment model
@@ -733,7 +722,6 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
                  "rewards": obs["rewards"][:n_time_steps, :]}
 
     # create dataset for both models -> features of cd-models the same as for cl-p-models
-    # for NVIDIA GeForce RTX 3050 Ti -> PyTorch 1.13.1 & CUDA 11.7 required
     device = ["cuda" if pt.cuda.is_available() else "cpu"][0]
     cl_p_data = TensorDataset(features_cl_p.to(device), labels_cl_p.to(device))
     cd_data = TensorDataset(features_cl_p.to(device), labels_cd.to(device))
@@ -752,44 +740,31 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
 
     del train_cl_p, val_cl_p, train_cd, val_cd, obs, features_cl_p, labels_cl_p, labels_cd
 
-    # train 1st model in 1st episode in ensemble with 5000 epochs, for e > 0: re-train previous models with 500 epochs
-    if not load:
-        env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states,
-                                                              data_cl_p=[loader_train, loader_val],
-                                                              data_cd=[loader_train_cd, loader_val_cd],
-                                                              load=load, model_no=0, n_neurons=n_neurons_cl_p,
-                                                              n_layers=n_layers_cl_p, n_neurons_cd=n_neurons_cd,
-                                                              n_layers_cd=n_layers_cd)
-    else:
-        env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states,
-                                                              data_cl_p=[loader_train, loader_val],
-                                                              data_cd=[loader_train_cd, loader_val_cd],
-                                                              load=True, model_no=0, epochs=1000, epochs_cd=1000,
-                                                              n_neurons=n_neurons_cl_p, n_layers=n_layers_cl_p,
-                                                              n_neurons_cd=n_neurons_cd, n_layers_cd=n_layers_cd)
-
-    # start filling the model ensemble "buffer"
-    cl_p_ensemble.append(env_model_cl_p.eval())
-    cd_ensemble.append(env_model_cd.eval())
-
-    for model in range(1, n_models):
-        # train each new model in the ensemble initialized with the 1st model trained above with 250 epochs
-        env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states,
-                                                              data_cl_p=[loader_train, loader_val],
-                                                              data_cd=[loader_train_cd, loader_val_cd],
-                                                              epochs=e_re_train, epochs_cd=e_re_train_cd, load=True,
-                                                              model_no=model, n_neurons=n_neurons_cl_p,
-                                                              n_layers=n_layers_cl_p, n_neurons_cd=n_neurons_cd,
-                                                              n_layers_cd=n_layers_cd)
+    # TODO: parallelize model training
+    for m in range(n_models):
+        if not load:
+            env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states,
+                                                                  data_cl_p=[loader_train, loader_val],
+                                                                  data_cd=[loader_train_cd, loader_val_cd],
+                                                                  load=load, model_no=m, n_neurons=n_neurons_cl_p,
+                                                                  n_layers=n_layers_cl_p, n_neurons_cd=n_neurons_cd,
+                                                                  n_layers_cd=n_layers_cd)
+        else:
+            env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states,
+                                                                  data_cl_p=[loader_train, loader_val],
+                                                                  data_cd=[loader_train_cd, loader_val_cd],
+                                                                  load=True, model_no=m, epochs=1000, epochs_cd=1000,
+                                                                  n_neurons=n_neurons_cl_p, n_layers=n_layers_cl_p,
+                                                                  n_neurons_cd=n_neurons_cd, n_layers_cd=n_layers_cd)
         cl_p_ensemble.append(env_model_cl_p.eval())
         cd_ensemble.append(env_model_cd.eval())
         losses.append(loss)
 
     # in case only one model is used, then return the loss of the first model
-    if not losses:
-        return cl_p_ensemble, cd_ensemble, loss, init_data
+    if len(losses) < 2:
+        return cl_p_ensemble, cd_ensemble, losses[0], init_data
     else:
-        return cl_p_ensemble, cd_ensemble, pt.tensor(losses), init_data
+        return cl_p_ensemble, cd_ensemble, losses, init_data
 
 
 if __name__ == "__main__":
