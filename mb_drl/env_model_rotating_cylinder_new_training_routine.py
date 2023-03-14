@@ -5,9 +5,9 @@
 """
 import torch as pt
 from os import mkdir
-from typing import Tuple
+from typing import Tuple, List
 from os.path import join, exists
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, random_split
 
 from drlfoam.agent import PPOAgent
 from drlfoam.agent.agent import compute_gae
@@ -125,6 +125,7 @@ def train_model(model: pt.nn.Module, dataloader_train: DataLoader, dataloader_va
     :param epochs: number of epochs for training
     :param lr: learning rate
     :param stop: if avg. gradient of validation loss reaches this value, the training is aborted
+    :param save_model: option to save best model, default is True
     :param save_dir: path to directory where models should be saved
     :param save_name: name of the model saved, default is number of epoch
     :return: training and validation loss as list
@@ -439,7 +440,8 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
 
 def train_env_models(path: str, n_t_input: int, n_probes: int, data_cl_p: list, data_cd: list, n_neurons: int = 100,
                      n_layers: int = 3, n_neurons_cd: int = 50, n_layers_cd: int = 5, epochs: int = 2500,
-                     epochs_cd: int = 2500, load: bool = False, model_no: int = 0) -> Tuple[EnvironmentModel] and list:
+                     epochs_cd: int = 2500, load: bool = False,
+                     model_no: int = 0) -> EnvironmentModel and EnvironmentModel and list:
     """
     initializes two environment models, trains and validates them based on the sampled data from the CFD
     environment. The models are trained and validated using the previous 2 episodes run in the CFD environment
@@ -465,9 +467,6 @@ def train_env_models(path: str, n_t_input: int, n_probes: int, data_cl_p: list, 
     # train and validate environment models with CFD data from the previous episode
     print(f"start training the environment model no. {model_no} for cl & p")
 
-    # set new seed value for each new model prior initialization
-    pt.manual_seed(model_no)
-
     # initialize environment networks TODO: generalize n_actions, n_cl, n_cd -> fluidic pinball
     env_model_cl_p = EnvironmentModel(n_inputs=n_t_input * (n_probes + 3), n_outputs=n_probes + 1, n_neurons=n_neurons,
                                       n_layers=n_layers)
@@ -477,10 +476,10 @@ def train_env_models(path: str, n_t_input: int, n_probes: int, data_cl_p: list, 
     # move model to GPU if available
     device = ["cuda" if pt.cuda.is_available() else "cpu"][0]
 
-    # load environment models trained in the previous CFD episode as starting point
+    # load environment models trained in the previous CFD episode
     if load:
-        env_model_cl_p.load_state_dict(pt.load(join(path, "cl_p_model", f"bestModel_no{model_no}_val.pt")))
-        env_model_cd.load_state_dict(pt.load(join(path, "cd_model", f"bestModel_no{model_no}_val.pt")))
+        env_model_cl_p.load_state_dict(pt.load(join(path, "cl_p_model", f"bestModel_no0_val.pt")))
+        env_model_cd.load_state_dict(pt.load(join(path, "cd_model", f"bestModel_no0_val.pt")))
 
     # train environment models
     train_loss, val_loss = train_model(env_model_cl_p.to(device), dataloader_train=data_cl_p[0],
@@ -563,7 +562,7 @@ def fill_buffer_from_models(env_model_cl_p: list, env_model_cd: list, episode: i
     :param agent: PPO-agent
     :return: a list with the length of the buffer size containing the generated trajectories
     """
-    predictions, shape,  = [], (len_traj, len(env_model_cl_p))
+    predictions, shape = [], (len_traj, len(env_model_cl_p))
     r_model_tmp, a_model_tmp, s_model_tmp = pt.zeros(shape), pt.zeros(shape), pt.zeros((shape[0], n_probes, shape[1]))
     r_model, a_model, s_model = [], [], []
 
@@ -647,14 +646,14 @@ def generate_feature_labels(cd, states: pt.Tensor = None, actions: pt.Tensor = N
         exit(0)
 
     # TODO: generalize n_actions, n_cl, n_cd -> fluidic pinball
-    n_traj, shape_input = cd.size()[1], (len_traj-n_t_input, n_t_input * (n_probes + 3))
+    n_traj, shape_input = cd.size()[1], (len_traj - n_t_input, n_t_input * (n_probes + 3))
     feature, label = [], []
     for n in range(n_traj):
         # tmp tensor for each trajectory: [N_features, N_input] -> model input always [batch_size, N_features]
         if cd_model:
-            f, l = 0, pt.zeros(len_traj-n_t_input, 1)
+            f, l = 0, pt.zeros(len_traj - n_t_input, 1)
         else:
-            f, l = pt.zeros(shape_input), pt.zeros(len_traj-n_t_input, n_probes+1)
+            f, l = pt.zeros(shape_input), pt.zeros(len_traj - n_t_input, n_probes + 1)
 
         for t_idx in range(0, len_traj - n_t_input):
             # cd-models have the same feature as the cl-p models, therefore the feature don't need to be computed again
@@ -680,10 +679,32 @@ def generate_feature_labels(cd, states: pt.Tensor = None, actions: pt.Tensor = N
         return pt.cat(feature, dim=0), pt.cat(label, dim=0)
 
 
+def create_subset_of_data(data: TensorDataset, n_models: int, batch_size: int = 25) -> List[DataLoader]:
+    """
+    creates a subset of the dataset wrt number of models, so that each model can be trained on a different subset of the
+    dataset in order to accelerate the overall training process
+
+    :param data: the dataset consisting of features and labels
+    :param n_models: number of models in the ensemble
+    :param batch_size: batch size
+    :return: list of the dataloaders created for each model
+    """
+    rest = len(data.indices) % (n_models - 1)
+    idx = [int(len(data.indices) / (n_models - 1)) for _ in range(n_models-1)]
+
+    # distribute the remaining idx equally over the models
+    for i in range(rest):
+        idx[i] += 1
+
+    return [DataLoader(i, batch_size=batch_size, shuffle=True, drop_last=False) for i in random_split(data, idx)]
+
+
 def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: int, n_states: int, buffer: int,
-                                     n_models: int, n_time_steps: int = 30, load: bool = False, n_layers_cl_p: int = 3,
+                                     n_models: int, n_time_steps: int = 30, e_re_train: int = 1000,
+                                     e_re_train_cd: int = 1000, load: bool = False, n_layers_cl_p: int = 3,
                                      n_layers_cd: int = 5, n_neurons_cl_p: int = 100,
-                                     n_neurons_cd: int = 50) -> Tuple[list, list, list, dict]:
+                                     n_neurons_cd: int = 50) -> Tuple[list, list, pt.Tensor, dict] \
+                                                                or Tuple[list, list, list, dict]:
     """
     wrapper function for train the ensemble of environment models
 
@@ -694,6 +715,8 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
     :param buffer: buffer size
     :param n_models: number of environment models in the ensemble
     :param n_time_steps: number as input time steps for the environment models
+    :param e_re_train:number of episodes for re-training the cl-p-models if no valid trajectories could be generated
+    :param e_re_train_cd: number of episodes for re-training the cd-models if no valid trajectories could be generated
     :param load: flag if 1st model in ensemble is trained from scratch or if previous model is used as initialization
     :param n_layers_cl_p: number of neurons per layer for the cl-p-environment model
     :param n_neurons_cl_p: number of hidden layers for the cl-p-environment model
@@ -729,8 +752,8 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
     # split into training ind validation data -> 75% training, 25% validation data
     n_train = int(0.75 * features_cl_p.size()[0])
     n_val = features_cl_p.size()[0] - n_train
-    train_cl_p, val_cl_p = pt.utils.data.random_split(cl_p_data, [n_train, n_val])
-    train_cd, val_cd = pt.utils.data.random_split(cd_data, [n_train, n_val])
+    train_cl_p, val_cl_p = random_split(cl_p_data, [n_train, n_val])
+    train_cd, val_cd = random_split(cd_data, [n_train, n_val])
 
     # create dataloader and free up some memory
     loader_train = DataLoader(train_cl_p, batch_size=25, shuffle=True, drop_last=False)
@@ -738,24 +761,47 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
     loader_train_cd = DataLoader(train_cd, batch_size=25, shuffle=True, drop_last=False)
     loader_val_cd = DataLoader(val_cd, batch_size=25, shuffle=True, drop_last=False)
 
-    del train_cl_p, val_cl_p, train_cd, val_cd, obs, features_cl_p, labels_cl_p, labels_cd
+    del obs, features_cl_p, labels_cl_p, labels_cd
 
-    # TODO: parallelize model training
-    for m in range(n_models):
-        if not load:
-            env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states,
-                                                                  data_cl_p=[loader_train, loader_val],
-                                                                  data_cd=[loader_train_cd, loader_val_cd],
-                                                                  load=load, model_no=m, n_neurons=n_neurons_cl_p,
-                                                                  n_layers=n_layers_cl_p, n_neurons_cd=n_neurons_cd,
-                                                                  n_layers_cd=n_layers_cd)
-        else:
-            env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states,
-                                                                  data_cl_p=[loader_train, loader_val],
-                                                                  data_cd=[loader_train_cd, loader_val_cd],
-                                                                  load=True, model_no=m, epochs=1000, epochs_cd=1000,
-                                                                  n_neurons=n_neurons_cl_p, n_layers=n_layers_cl_p,
-                                                                  n_neurons_cd=n_neurons_cd, n_layers_cd=n_layers_cd)
+    # train 1st model in e = 0 with max. 2500 epochs, for e > 0: re-train from previous model with 1000 epochs
+    if not load:
+        env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states,
+                                                              data_cl_p=[loader_train, loader_val],
+                                                              data_cd=[loader_train_cd, loader_val_cd],
+                                                              load=load, model_no=0, n_neurons=n_neurons_cl_p,
+                                                              n_layers=n_layers_cl_p, n_neurons_cd=n_neurons_cd,
+                                                              n_layers_cd=n_layers_cd)
+    else:
+        env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states,
+                                                              data_cl_p=[loader_train, loader_val],
+                                                              data_cd=[loader_train_cd, loader_val_cd],
+                                                              load=True, model_no=0, epochs=e_re_train,
+                                                              epochs_cd=e_re_train, n_neurons=n_neurons_cl_p,
+                                                              n_layers=n_layers_cl_p, n_neurons_cd=n_neurons_cd,
+                                                              n_layers_cd=n_layers_cd)
+
+    # train only 1st model on all the data, then initialize each new model with 1st model and train each model on
+    # different subset of the data
+    loader_train = create_subset_of_data(train_cl_p, n_models)
+    loader_val = create_subset_of_data(val_cl_p, n_models)
+    loader_train_cd = create_subset_of_data(train_cd, n_models)
+    loader_val_cd = create_subset_of_data(val_cd, n_models)
+
+    del train_cl_p, val_cl_p, train_cd, val_cd
+
+    # start filling the model ensemble "buffer"
+    cl_p_ensemble.append(env_model_cl_p.eval())
+    cd_ensemble.append(env_model_cd.eval())
+
+    for m in range(1, n_models):
+        # train each new model in the ensemble initialized with the 1st model with max. 1000 epochs
+        env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states,
+                                                              data_cl_p=[loader_train[m-1], loader_val[m-1]],
+                                                              data_cd=[loader_train_cd[m-1], loader_val_cd[m-1]],
+                                                              epochs=e_re_train, epochs_cd=e_re_train_cd, load=True,
+                                                              model_no=m, n_neurons=n_neurons_cl_p,
+                                                              n_layers=n_layers_cl_p, n_neurons_cd=n_neurons_cd,
+                                                              n_layers_cd=n_layers_cd)
         cl_p_ensemble.append(env_model_cl_p.eval())
         cd_ensemble.append(env_model_cd.eval())
         losses.append(loss)

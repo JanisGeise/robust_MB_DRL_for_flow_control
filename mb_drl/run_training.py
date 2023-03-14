@@ -6,7 +6,7 @@ import argparse
 from glob import glob
 from time import time
 from os.path import join
-from torch import manual_seed
+from torch import manual_seed, cuda
 from shutil import copytree, rmtree
 from os import makedirs, chdir, environ, system, getcwd
 
@@ -69,6 +69,8 @@ def main(args):
 
     # ensure reproducibility
     manual_seed(args.seed)
+    if cuda.is_available():
+        cuda.manual_seed_all(args.seed)
 
     # create a directory for training
     makedirs(training_path, exist_ok=True)
