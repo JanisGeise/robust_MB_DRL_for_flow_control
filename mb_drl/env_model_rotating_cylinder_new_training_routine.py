@@ -780,31 +780,34 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
                                                               n_layers=n_layers_cl_p, n_neurons_cd=n_neurons_cd,
                                                               n_layers_cd=n_layers_cd)
 
-    # train only 1st model on all the data, then initialize each new model with 1st model and train each model on
-    # different subset of the data
-    loader_train = create_subset_of_data(train_cl_p, n_models)
-    loader_val = create_subset_of_data(val_cl_p, n_models)
-    loader_train_cd = create_subset_of_data(train_cd, n_models)
-    loader_val_cd = create_subset_of_data(val_cd, n_models)
-
-    del train_cl_p, val_cl_p, train_cd, val_cd
-
     # start filling the model ensemble "buffer"
     cl_p_ensemble.append(env_model_cl_p.eval())
     cd_ensemble.append(env_model_cd.eval())
+    losses.append(loss)
 
-    for m in range(1, n_models):
-        # train each new model in the ensemble initialized with the 1st model with max. 1000 epochs
-        env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states,
-                                                              data_cl_p=[loader_train[m-1], loader_val[m-1]],
-                                                              data_cd=[loader_train_cd[m-1], loader_val_cd[m-1]],
-                                                              epochs=e_re_train, epochs_cd=e_re_train_cd, load=True,
-                                                              model_no=m, n_neurons=n_neurons_cl_p,
-                                                              n_layers=n_layers_cl_p, n_neurons_cd=n_neurons_cd,
-                                                              n_layers_cd=n_layers_cd)
-        cl_p_ensemble.append(env_model_cl_p.eval())
-        cd_ensemble.append(env_model_cd.eval())
-        losses.append(loss)
+    if n_models > 1:
+        # train only 1st model on all the data, then initialize each new model with 1st model and train each model on
+        # different subset of the data
+        loader_train = create_subset_of_data(train_cl_p, n_models)
+        loader_val = create_subset_of_data(val_cl_p, n_models)
+        loader_train_cd = create_subset_of_data(train_cd, n_models)
+        loader_val_cd = create_subset_of_data(val_cd, n_models)
+
+        del train_cl_p, val_cl_p, train_cd, val_cd
+
+        # TODO: parallelization when env = slurm -> availability GPU nodes...?
+        for m in range(1, n_models):
+            # train each new model in the ensemble initialized with the 1st model with max. 1000 epochs
+            env_model_cl_p, env_model_cd, loss = train_env_models(train_path, n_time_steps, n_states,
+                                                                  data_cl_p=[loader_train[m-1], loader_val[m-1]],
+                                                                  data_cd=[loader_train_cd[m-1], loader_val_cd[m-1]],
+                                                                  epochs=e_re_train, epochs_cd=e_re_train_cd, load=True,
+                                                                  model_no=m, n_neurons=n_neurons_cl_p,
+                                                                  n_layers=n_layers_cl_p, n_neurons_cd=n_neurons_cd,
+                                                                  n_layers_cd=n_layers_cd)
+            cl_p_ensemble.append(env_model_cl_p.eval())
+            cd_ensemble.append(env_model_cd.eval())
+            losses.append(loss)
 
     # in case only one model is used, then return the loss of the first model
     if len(losses) < 2:

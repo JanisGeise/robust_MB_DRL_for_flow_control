@@ -135,7 +135,14 @@ def main(args):
     start_time = time()
     for e in range(starting_episode, episodes):
         print(f"Start of episode {e}")
-        if e == starting_episode or env_model.determine_switching(e):
+
+        # if only 1 model is used, switch every 4th episode to CFD, else determine switching based on model performance
+        if env_model.n_models == 1:
+            switch = (e % 4 == 0)
+        else:
+            switch = env_model.determine_switching(e)
+
+        if e == starting_episode or switch:
             # save path of current CFD episode
             env_model.append_cfd_obs(e)
 
