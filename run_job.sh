@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH --partition=standard      # change to 'partition=gpu02_queue' for GPU
+#SBATCH --partition=standard      # change to e.g. 'partition=gpu02_queue' for training on GPU
 #SBATCH --nodes=1
 #SBATCH --time=12:00:00
 #SBATCH --job-name=drl_train
-#SBATCH --ntasks-per-node=4
-# add '#SBATCH --gres=gpu:4' for GPU
+#SBATCH --ntasks-per-node=6
+#   #SBATCH --gres=gpu:1        # for training on a single GPU
 
 module load python/3.8.2
 
