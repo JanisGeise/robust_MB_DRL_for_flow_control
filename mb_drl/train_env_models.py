@@ -1,13 +1,13 @@
 """
-TODO
+contains a class for the environment models, training routines and all required functions for processing the data
+regarding the model training.
 """
 import os
 import sys
 import argparse
 import torch as pt
 
-from os import mkdir
-from typing import Tuple
+from typing import Tuple, Union
 from os.path import join, exists
 
 BASE_PATH = os.environ.get("DRL_BASE", "")
@@ -74,7 +74,7 @@ def train_model(model: pt.nn.Module, dataloader_train: pt.utils.data.DataLoader,
     :return: training and validation loss as list
     """
     if not exists(save_dir):
-        mkdir(save_dir)
+        os.mkdir(save_dir)
 
     # optimizer settings
     criterion = pt.nn.MSELoss()
@@ -158,7 +158,7 @@ def train_env_models(path: str, env_model_cl_p: EnvironmentModel, env_model_cd: 
     :return: both environment models (cl-p & cd), as well as the corresponding training- and validation losses
     """
     if not exists(path):
-        mkdir(path)
+        os.mkdir(path)
 
     # train and validate environment models with CFD data from the previous episode
     print(f"start training the environment model no. {model_no} for cl & p")
@@ -195,25 +195,24 @@ def train_env_models(path: str, env_model_cl_p: EnvironmentModel, env_model_cd: 
 
 def execute_model_training_slurm(model_no: int, train_path: str = "examples/run_training/") -> None:
     """
-    TODO
+    executes the model training on an HPC cluster using the singularity container
 
     :param model_no: number of the current environment model
-    :param train_path:
+    :param train_path: path to current PPO-training directory
     :return: None
     """
-    # cwd = drlfoam/ but 'train_env_models.py' is located and executed from 'drlfoam/drlfoam/environment/', so go back
-    # to this directory
-    os.chdir(join("..", "..", train_path))
+    # cwd = 'drlfoam/drlfoam/environment/', so go back to the training directory
+    os.chdir(join("..", "..", "examples"))
 
-    # update the training path
-    train_path = join(BASE_PATH, train_path)
+    # update path (relative path not working on cluster)
+    train_path = join(BASE_PATH, "examples", train_path)
 
     # initialize each model with different seed value
     pt.manual_seed(model_no)
     if pt.cuda.is_available():
         pt.cuda.manual_seed_all(model_no)
 
-    settings = pt.load("settings_model_training.pt")
+    settings = pt.load(join(train_path, "settings_model_training.pt"))
     loader_train = pt.load(join(train_path, "loader_train.pt"))
     loader_val = pt.load(join(train_path, "loader_val.pt"))
     loader_train_cd = pt.load(join(train_path, "loader_train_cd.pt"))
@@ -227,7 +226,7 @@ def execute_model_training_slurm(model_no: int, train_path: str = "examples/run_
 
 if __name__ == "__main__":
     ag = argparse.ArgumentParser()
-    ag.add_argument("-m", "--model", required=True, type=int, help="number of the current environment model")
+    ag.add_argument("-m", "--model", required=True, help="number of the current environment model")
     ag.add_argument("-p", "--path", required=True, type=str, help="path to training directory")
     args = ag.parse_args()
-    execute_model_training_slurm(args.model, args.path)
+    execute_model_training_slurm(int(args.model), args.path)

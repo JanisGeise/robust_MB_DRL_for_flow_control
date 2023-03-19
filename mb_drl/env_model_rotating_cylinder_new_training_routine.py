@@ -4,11 +4,11 @@
     model-based trajectories for the PPO-training.
 """
 import os
-
+import sys
 import torch as pt
 
 from glob import glob
-from os import remove
+from os import remove, getcwd
 from os.path import join
 from typing import Tuple, List
 from torch.utils.data import DataLoader, TensorDataset, random_split
@@ -18,6 +18,12 @@ from drlfoam.agent.agent import compute_gae
 from drlfoam.constants import EPS_SP
 
 from drlfoam.environment.train_env_models import train_env_models, EnvironmentModel
+from drlfoam.execution import SlurmConfig
+from drlfoam.execution.manager import TaskManager
+from drlfoam.execution.slurm import submit_and_wait
+
+BASE_PATH = os.environ.get("DRL_BASE", "")
+sys.path.insert(0, BASE_PATH)
 
 
 class SetupEnvironmentModel:
@@ -649,16 +655,29 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
             pt.save({"train_path": train_path, "env_model_cl_p": env_model_cl_p, "env_model_cd": env_model_cd,
                      "epochs": e_re_train, "epochs_cd": e_re_train_cd}, join(train_path, "settings_model_training.pt"))
 
-            # TODO: parallelization when env = slurm
-            for m in range(1, n_models):
-                # cwd = ~/drlfoam/ -> 'train_env_models.py' is located in 'drlfoam/drlfoam/environment/'
-                train_env_models(train_path, env_model_cl_p, env_model_cd,
-                                 data_cl_p=[loader_train[m - 1], loader_val[m - 1]],
-                                 data_cd=[loader_train_cd[m - 1], loader_val_cd[m - 1]], epochs=e_re_train,
-                                 epochs_cd=e_re_train_cd, load=True, model_no=m, env=env)
-            # TODO END
+            # write shell script for executing the model training -> cwd on HPC = 'drlfoam/examples/'
+            # NOTE: it is important that the partition is different from the partition where the 'run_training.py' was
+            # submitted to, otherwise the main job gets canceled for some reason once the jobs for model training starts
+            config = SlurmConfig(partition="gpu03_queue", n_nodes=1, n_tasks_per_node=2, job_name="model_train",
+                                 modules=["python/3.8.2"], time="00:30:00",
+                                 commands=[f"source {join('~', 'drlfoam', 'pydrl', 'bin', 'activate')}",
+                                           f"source {join('~', 'drlfoam', 'setup-env --container')}",
+                                           f"cd {join('~', 'drlfoam', 'drlfoam', 'environment')}",
+                                           "python3 train_env_models.py -m $1 -p $2"])
+
+            # add number of GPUs and write script to cwd
+            config._options["--gres"] = "gpu:1"
+            config.write(join(os.getcwd(), "execute_model_training.sh"))
+            manager = TaskManager(n_runners_max=5)
 
             for m in range(1, n_models):
+                manager.add(submit_and_wait, [f"execute_model_training.sh", str(m), train_path], train_path)
+            manager.run()
+
+            for m in range(1, n_models):
+                # update path (relative path not working on cluster)
+                train_path = join(BASE_PATH, "examples", train_path)
+
                 # load the losses once the training is done
                 train_loss = [pt.load(join(train_path, "cl_p_model", f"loss{m}_train_cl_p.pt")),
                               pt.load(join(train_path, "cd_model", f"loss{m}_train_cd.pt"))]
@@ -669,9 +688,10 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
                 cd_ensemble.append(env_model_cd.eval())
                 losses.append([train_loss, val_loss])
 
-            # delete the data loaders and setup dict
-            [remove(f) for f in glob(join(train_path, "loader_*.pt"))]
-            remove(join(train_path, "settings_model_training.pt"))
+            # clean up
+            [os.remove(f) for f in glob(join(train_path, "loader_*.pt"))]
+            os.remove(join(train_path, "settings_model_training.pt"))
+            os.remove(join(os.getcwd(), "execute_model_training.sh"))
 
     # in case only one model is used, then return the loss of the first model
     if len(losses) < 2:

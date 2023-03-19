@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --time=12:00:00
 #SBATCH --job-name=drl_train
-#SBATCH --ntasks-per-node=6
+#SBATCH --ntasks-per-node=4
 #   #SBATCH --gres=gpu:1        # for training on a single GPU
 
 module load python/3.8.2
