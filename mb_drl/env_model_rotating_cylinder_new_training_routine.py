@@ -267,7 +267,7 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
 
     # use batch for prediction, because batch normalization only works for batch size > 1
     # -> at least 2 trajectories required
-    batch_size, dev = 2, ["cuda" if pt.cuda.is_available() else "cpu"][0]
+    batch_size, dev = 2, "cuda" if pt.cuda.is_available() else "cpu"
     shape = (batch_size, len_trajectory)
     traj_cd, traj_cl, traj_alpha, traj_beta, traj_actions, traj_p = pt.zeros(shape).to(dev), pt.zeros(shape).to(dev),\
                                                                     pt.zeros(shape).to(dev), pt.zeros(shape).to(dev),\
@@ -587,7 +587,7 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
                  "rewards": obs["rewards"][:n_time_steps, :]}
 
     # create dataset for both models -> features of cd-models the same as for cl-p-models
-    device = ["cuda" if pt.cuda.is_available() else "cpu"][0]
+    device = "cuda" if pt.cuda.is_available() else "cpu"
     cl_p_data = TensorDataset(features_cl_p.to(device), labels_cl_p.to(device))
     cd_data = TensorDataset(features_cl_p.to(device), labels_cd.to(device))
 
@@ -675,7 +675,7 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
             manager = TaskManager(n_runners_max=5)
 
             for m in range(1, n_models):
-                manager.add(submit_and_wait, [f"execute_model_training.sh", str(m), train_path], train_path)
+                manager.add(submit_and_wait, [f"execute_model_training.sh", str(m), train_path])
             manager.run()
 
             for m in range(1, n_models):

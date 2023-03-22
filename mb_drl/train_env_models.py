@@ -164,7 +164,7 @@ def train_env_models(path: str, env_model_cl_p: EnvironmentModel, env_model_cd: 
     print(f"start training the environment model no. {model_no} for cl & p")
 
     # move model to GPU if available
-    device = ["cuda" if pt.cuda.is_available() else "cpu"][0]
+    device = "cuda" if pt.cuda.is_available() else "cpu"
 
     # load environment models trained in the previous CFD episode
     if load:
