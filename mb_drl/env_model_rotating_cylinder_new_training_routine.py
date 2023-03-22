@@ -8,7 +8,6 @@ import sys
 import torch as pt
 
 from glob import glob
-from os import remove, getcwd
 from os.path import join
 from typing import Tuple, List
 from torch.utils.data import DataLoader, TensorDataset, random_split
@@ -656,9 +655,13 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
                      "epochs": e_re_train, "epochs_cd": e_re_train_cd}, join(train_path, "settings_model_training.pt"))
 
             # write shell script for executing the model training -> cwd on HPC = 'drlfoam/examples/'
-            # NOTE: it is important that the partition is different from the partition where the 'run_training.py' was
-            # submitted to, otherwise the main job gets canceled for some reason once the jobs for model training starts
-            config = SlurmConfig(partition="gpu03_queue", n_nodes=1, n_tasks_per_node=2, job_name="model_train",
+            if pt.cuda.is_available():
+                partition = "gpu02_queue"
+                task_per_node = 1
+            else:
+                partition = "standard"
+                task_per_node = 2
+            config = SlurmConfig(partition=partition, n_nodes=1, n_tasks_per_node=task_per_node, job_name="model_train",
                                  modules=["python/3.8.2"], time="00:30:00",
                                  commands=[f"source {join('~', 'drlfoam', 'pydrl', 'bin', 'activate')}",
                                            f"source {join('~', 'drlfoam', 'setup-env --container')}",
@@ -666,7 +669,8 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
                                            "python3 train_env_models.py -m $1 -p $2"])
 
             # add number of GPUs and write script to cwd
-            config._options["--gres"] = "gpu:1"
+            if pt.cuda.is_available():
+                config._options["--gres"] = "gpu:1"
             config.write(join(os.getcwd(), "execute_model_training.sh"))
             manager = TaskManager(n_runners_max=5)
 
