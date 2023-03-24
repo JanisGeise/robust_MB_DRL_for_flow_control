@@ -7,6 +7,7 @@ import os
 import sys
 import torch as pt
 
+from time import time
 from glob import glob
 from os.path import join
 from typing import Tuple, List
@@ -35,6 +36,12 @@ class SetupEnvironmentModel:
         self.last_cfd = 0
         self.policy_loss = []
         self.threshold = 0.5
+        self.start_training = None
+        self._start_time = None
+        self._time_cfd = []
+        self._time_model_train = []
+        self._time_prediction = []
+        self._time_ppo = []
 
     def determine_switching(self, current_episode: int):
         """
@@ -82,6 +89,44 @@ class SetupEnvironmentModel:
     def reset(self, episode):
         self.policy_loss = []
         self.last_cfd = episode
+
+    def start_timer(self):
+        self._start_time = time()
+
+    def time_cfd_episode(self):
+        self._time_cfd.append(time() - self._start_time)
+
+    def time_model_training(self):
+        self._time_model_train.append(time() - self._start_time)
+
+    def time_mb_episode(self):
+        self._time_prediction.append(time() - self._start_time)
+
+    def time_ppo_update(self):
+        self._time_ppo.append(time() - self._start_time)
+
+    def compute_statistics(self, param):
+        return ["{:.2f}".format(pt.mean(pt.tensor(param)).item()),
+                "{:.2f}".format(pt.std(pt.tensor(param)).item()),
+                "{:.2f}".format(pt.min(pt.tensor(param)).item()),
+                "{:.2f}".format(pt.max(pt.tensor(param)).item()),
+                "\n\t= " + "{:.2f}".format(pt.mean(pt.tensor(param)).item() / (time() - self.start_training) * 100) +
+                " % of total training time"]
+
+    def print_info(self):
+        cfd = self.compute_statistics(self._time_cfd)
+        model = self.compute_statistics(self._time_model_train)
+        predict = self.compute_statistics(self._time_prediction)
+        ppo = self.compute_statistics(self._time_ppo)
+
+        print(f"time per CFD episode:\n\tmean: {cfd[0]}s\n\tstd: {cfd[1]}s\n\tmin: {cfd[2]}s\n\tmax: {cfd[3]}s",
+              cfd[4])
+        print(f"time per model training:\n\tmean: {model[0]}s\n\tstd: {model[1]}s\n\tmin: {model[2]}s\n\tmax:"
+              f" {model[3]}s", model[4])
+        print(f"time per MB-episode:\n\tmean: {predict[0]}s\n\tstd: {predict[1]}s\n\tmin: {predict[2]}s\n\tmax:"
+              f" {predict[3]}s", predict[4])
+        print(f"time per update of PPO-agent:\n\tmean: {ppo[0]}s\n\tstd: {ppo[1]}s\n\tmin: {ppo[2]}s\n\tmax:"
+              f" {ppo[3]}s", ppo[4])
 
 
 def normalize_data(x: pt.Tensor, x_min_max: list = None) -> Tuple[pt.Tensor, list]:
@@ -660,7 +705,7 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
                 task_per_node = 1
             else:
                 partition = "standard"
-                task_per_node = 2
+                task_per_node = 4
             config = SlurmConfig(partition=partition, n_nodes=1, n_tasks_per_node=task_per_node, job_name="model_train",
                                  modules=["python/3.8.2"], time="00:30:00",
                                  commands=[f"source {join('~', 'drlfoam', 'pydrl', 'bin', 'activate')}",
@@ -672,7 +717,7 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
             if pt.cuda.is_available():
                 config._options["--gres"] = "gpu:1"
             config.write(join(os.getcwd(), "execute_model_training.sh"))
-            manager = TaskManager(n_runners_max=5)
+            manager = TaskManager(n_runners_max=10)
 
             for m in range(1, n_models):
                 manager.add(submit_and_wait, [f"execute_model_training.sh", str(m), train_path])
@@ -694,6 +739,8 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
 
             # clean up
             [os.remove(f) for f in glob(join(train_path, "loader_*.pt"))]
+            [os.remove(f) for f in glob(join(train_path, "cl_p_model", "loss*.pt"))]
+            [os.remove(f) for f in glob(join(train_path, "cd_model", "loss*.pt"))]
             os.remove(join(train_path, "settings_model_training.pt"))
             os.remove(join(os.getcwd(), "execute_model_training.sh"))
 
