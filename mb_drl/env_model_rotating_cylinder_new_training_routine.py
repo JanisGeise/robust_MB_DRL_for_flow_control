@@ -106,12 +106,9 @@ class SetupEnvironmentModel:
         self._time_ppo.append(time() - self._start_time)
 
     def compute_statistics(self, param):
-        return ["{:.2f}".format(pt.mean(pt.tensor(param)).item()),
-                "{:.2f}".format(pt.std(pt.tensor(param)).item()),
-                "{:.2f}".format(pt.min(pt.tensor(param)).item()),
-                "{:.2f}".format(pt.max(pt.tensor(param)).item()),
-                "\n\t= " + "{:.2f}".format(pt.mean(pt.tensor(param)).item() / (time() - self.start_training) * 100) +
-                " % of total training time"]
+        return [round(pt.mean(pt.tensor(param)).item(), 2), round(pt.std(pt.tensor(param)).item(), 2),
+                round(pt.min(pt.tensor(param)).item(), 2), round(pt.max(pt.tensor(param)).item(), 2),
+                round(sum(param) / (time() - self.start_training) * 100, 2)]
 
     def print_info(self):
         cfd = self.compute_statistics(self._time_cfd)
@@ -119,14 +116,15 @@ class SetupEnvironmentModel:
         predict = self.compute_statistics(self._time_prediction)
         ppo = self.compute_statistics(self._time_ppo)
 
-        print(f"time per CFD episode:\n\tmean: {cfd[0]}s\n\tstd: {cfd[1]}s\n\tmin: {cfd[2]}s\n\tmax: {cfd[3]}s",
-              cfd[4])
+        print(f"time per CFD episode:\n\tmean: {cfd[0]}s\n\tstd: {cfd[1]}s\n\tmin: {cfd[2]}s\n\tmax: {cfd[3]}s\n\t"
+              f"= {cfd[4]} % of total training time")
         print(f"time per model training:\n\tmean: {model[0]}s\n\tstd: {model[1]}s\n\tmin: {model[2]}s\n\tmax:"
-              f" {model[3]}s", model[4])
+              f" {model[3]}s\n\t= {model[4]} % of total training time")
         print(f"time per MB-episode:\n\tmean: {predict[0]}s\n\tstd: {predict[1]}s\n\tmin: {predict[2]}s\n\tmax:"
-              f" {predict[3]}s", predict[4])
+              f" {predict[3]}s\n\t= {predict[4]} % of total training time")
         print(f"time per update of PPO-agent:\n\tmean: {ppo[0]}s\n\tstd: {ppo[1]}s\n\tmin: {ppo[2]}s\n\tmax:"
-              f" {ppo[3]}s", ppo[4])
+              f" {ppo[3]}s\n\t= {ppo[4]} % of total training time")
+        print(f"other: {round(100 - cfd[4] - model[4] - predict[4] - ppo[4], 2)} % of total training time")
 
 
 def normalize_data(x: pt.Tensor, x_min_max: list = None) -> Tuple[pt.Tensor, list]:
@@ -314,8 +312,8 @@ def predict_trajectories(env_model_cl_p: list, env_model_cd: list, episode: int,
     # -> at least 2 trajectories required
     batch_size, dev = 2, "cuda" if pt.cuda.is_available() else "cpu"
     shape = (batch_size, len_trajectory)
-    traj_cd, traj_cl, traj_alpha, traj_beta, traj_actions, traj_p = pt.zeros(shape).to(dev), pt.zeros(shape).to(dev),\
-                                                                    pt.zeros(shape).to(dev), pt.zeros(shape).to(dev),\
+    traj_cd, traj_cl, traj_alpha, traj_beta, traj_actions, traj_p = pt.zeros(shape).to(dev), pt.zeros(shape).to(dev), \
+                                                                    pt.zeros(shape).to(dev), pt.zeros(shape).to(dev), \
                                                                     pt.zeros(shape).to(dev), \
                                                                     pt.zeros((batch_size, len_trajectory, n_probes)).to(dev)
     for i in range(batch_size):
@@ -575,8 +573,8 @@ def create_subset_of_data(data: TensorDataset, n_models: int, batch_size: int = 
     :param batch_size: batch size
     :return: list of the dataloaders created for each model
     """
-    rest = len(data.indices) % (n_models - 1)
-    idx = [int(len(data.indices) / (n_models - 1)) for _ in range(n_models-1)]
+    rest = len(data.indices) % n_models
+    idx = [int(len(data.indices) / n_models) for _ in range(n_models)]
 
     # distribute the remaining idx equally over the models
     for i in range(rest):
@@ -642,12 +640,6 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
     train_cl_p, val_cl_p = random_split(cl_p_data, [n_train, n_val])
     train_cd, val_cd = random_split(cd_data, [n_train, n_val])
 
-    # create dataloader and free up some memory
-    loader_train = DataLoader(train_cl_p, batch_size=25, shuffle=True, drop_last=False)
-    loader_val = DataLoader(val_cl_p, batch_size=25, shuffle=True, drop_last=False)
-    loader_train_cd = DataLoader(train_cd, batch_size=25, shuffle=True, drop_last=False)
-    loader_val_cd = DataLoader(val_cd, batch_size=25, shuffle=True, drop_last=False)
-
     del obs, features_cl_p, labels_cl_p, labels_cd
 
     # initialize environment networks TODO: generalize n_actions, n_cl, n_cd -> fluidic pinball
@@ -656,93 +648,88 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
     env_model_cd = EnvironmentModel(n_inputs=n_time_steps * (n_states + 3), n_outputs=1, n_neurons=n_neurons_cd,
                                     n_layers=n_layers_cd)
 
-    # train 1st model in e = 0 with max. 2500 epochs, for e > 0: re-train from previous model with max. 1000 epochs
-    # env in both cases 'local' since all models m > 0 are derived from this model afterwards -> no parallelization here
-    if not load:
-        loss = train_env_models(train_path, env_model_cl_p, env_model_cd, data_cl_p=[loader_train, loader_val],
-                                data_cd=[loader_train_cd, loader_val_cd], load=load, model_no=0)
-    else:
-        loss = train_env_models(train_path, env_model_cl_p, env_model_cd, data_cl_p=[loader_train, loader_val],
-                                data_cd=[loader_train_cd, loader_val_cd], load=True, model_no=0, epochs=e_re_train,
-                                epochs_cd=e_re_train)
+    # train each model on different subset of the data. In case only 1 model is used, then this model is trained on
+    # complete dataset
+    loader_train = create_subset_of_data(train_cl_p, n_models)
+    loader_val = create_subset_of_data(val_cl_p, n_models)
+    loader_train_cd = create_subset_of_data(train_cd, n_models)
+    loader_val_cd = create_subset_of_data(val_cd, n_models)
 
-    # start filling the model ensemble "buffer"
-    cl_p_ensemble.append(env_model_cl_p.eval())
-    cd_ensemble.append(env_model_cd.eval())
-    losses.append(loss)
+    del train_cl_p, val_cl_p, train_cd, val_cd
 
-    if n_models > 1:
-        # train only 1st model on all the data, then initialize each new model with 1st model and train each model on
-        # different subset of the data
-        loader_train = create_subset_of_data(train_cl_p, n_models)
-        loader_val = create_subset_of_data(val_cl_p, n_models)
-        loader_train_cd = create_subset_of_data(train_cd, n_models)
-        loader_val_cd = create_subset_of_data(val_cd, n_models)
+    if env == "local":
+        for m in range(n_models):
+            # initialize each model with different seed value
+            pt.manual_seed(m)
+            if pt.cuda.is_available():
+                pt.cuda.manual_seed_all(m)
 
-        del train_cl_p, val_cl_p, train_cd, val_cd
-
-        if env == "local":
-            for m in range(1, n_models):
-                # train each new model in the ensemble initialized with the 1st model with max. 1000 epochs
+            # (re-) train each model in the ensemble with max. (1000) 2500 epochs
+            if not load:
                 loss = train_env_models(train_path, env_model_cl_p, env_model_cd,
-                                        data_cl_p=[loader_train[m-1], loader_val[m-1]],
-                                        data_cd=[loader_train_cd[m-1], loader_val_cd[m-1]], epochs=e_re_train,
-                                        epochs_cd=e_re_train_cd, load=True, model_no=m)
-                cl_p_ensemble.append(env_model_cl_p.eval())
-                cd_ensemble.append(env_model_cd.eval())
-                losses.append(loss)
-        else:
-            pt.save(loader_train, join(train_path, "loader_train.pt"))
-            pt.save(loader_train_cd, join(train_path, "loader_train_cd.pt"))
-            pt.save(loader_val, join(train_path, "loader_val.pt"))
-            pt.save(loader_val_cd, join(train_path, "loader_val_cd.pt"))
-            pt.save({"train_path": train_path, "env_model_cl_p": env_model_cl_p, "env_model_cd": env_model_cd,
-                     "epochs": e_re_train, "epochs_cd": e_re_train_cd}, join(train_path, "settings_model_training.pt"))
-
-            # write shell script for executing the model training -> cwd on HPC = 'drlfoam/examples/'
-            if pt.cuda.is_available():
-                partition = "gpu02_queue"
-                task_per_node = 1
+                                        data_cl_p=[loader_train[m], loader_val[m]],
+                                        data_cd=[loader_train_cd[m], loader_val_cd[m]], model_no=m)
             else:
-                partition = "standard"
-                task_per_node = 4
-            config = SlurmConfig(partition=partition, n_nodes=1, n_tasks_per_node=task_per_node, job_name="model_train",
-                                 modules=["python/3.8.2"], time="00:30:00",
-                                 commands=[f"source {join('~', 'drlfoam', 'pydrl', 'bin', 'activate')}",
-                                           f"source {join('~', 'drlfoam', 'setup-env --container')}",
-                                           f"cd {join('~', 'drlfoam', 'drlfoam', 'environment')}",
-                                           "python3 train_env_models.py -m $1 -p $2"])
+                loss = train_env_models(train_path, env_model_cl_p, env_model_cd,
+                                        data_cl_p=[loader_train[m], loader_val[m]],
+                                        data_cd=[loader_train_cd[m], loader_val_cd[m]], load=True, model_no=m,
+                                        epochs=e_re_train, epochs_cd=e_re_train)
+            cl_p_ensemble.append(env_model_cl_p.eval())
+            cd_ensemble.append(env_model_cd.eval())
+            losses.append(loss)
+    else:
+        pt.save(loader_train, join(train_path, "loader_train.pt"))
+        pt.save(loader_train_cd, join(train_path, "loader_train_cd.pt"))
+        pt.save(loader_val, join(train_path, "loader_val.pt"))
+        pt.save(loader_val_cd, join(train_path, "loader_val_cd.pt"))
+        pt.save({"train_path": train_path, "env_model_cl_p": env_model_cl_p, "env_model_cd": env_model_cd,
+                 "epochs": e_re_train, "epochs_cd": e_re_train_cd, "load": load},
+                join(train_path, "settings_model_training.pt"))
 
-            # add number of GPUs and write script to cwd
-            if pt.cuda.is_available():
-                config._options["--gres"] = "gpu:1"
-            config.write(join(os.getcwd(), "execute_model_training.sh"))
-            manager = TaskManager(n_runners_max=10)
+        # write shell script for executing the model training -> cwd on HPC = 'drlfoam/examples/'
+        if pt.cuda.is_available():
+            partition = "gpu02_queue"
+            task_per_node = 1
+        else:
+            partition = "standard"
+            task_per_node = 4
+        config = SlurmConfig(partition=partition, n_nodes=1, n_tasks_per_node=task_per_node, job_name="model_train",
+                             modules=["python/3.8.2"], time="00:30:00",
+                             commands=[f"source {join('~', 'drlfoam', 'pydrl', 'bin', 'activate')}",
+                                       f"source {join('~', 'drlfoam', 'setup-env --container')}",
+                                       f"cd {join('~', 'drlfoam', 'drlfoam', 'environment')}",
+                                       "python3 train_env_models.py -m $1 -p $2"])
 
-            for m in range(1, n_models):
-                manager.add(submit_and_wait, [f"execute_model_training.sh", str(m), train_path])
-            manager.run()
+        # add number of GPUs and write script to cwd
+        if pt.cuda.is_available():
+            config._options["--gres"] = "gpu:1"
+        config.write(join(os.getcwd(), "execute_model_training.sh"))
+        manager = TaskManager(n_runners_max=10)
 
-            for m in range(1, n_models):
-                # update path (relative path not working on cluster)
-                train_path = join(BASE_PATH, "examples", train_path)
+        for m in range(n_models):
+            manager.add(submit_and_wait, [f"execute_model_training.sh", str(m), train_path])
+        manager.run()
 
-                # load the losses once the training is done
-                train_loss = [pt.load(join(train_path, "cl_p_model", f"loss{m}_train_cl_p.pt")),
-                              pt.load(join(train_path, "cd_model", f"loss{m}_train_cd.pt"))]
-                val_loss = [pt.load(join(train_path, "cl_p_model", f"loss{m}_val_cl_p.pt")),
-                            pt.load(join(train_path, "cd_model", f"loss{m}_val_cd.pt"))]
+        for m in range(n_models):
+            # update path (relative path not working on cluster)
+            train_path = join(BASE_PATH, "examples", train_path)
 
-                cl_p_ensemble.append(env_model_cl_p.eval())
-                cd_ensemble.append(env_model_cd.eval())
-                losses.append([train_loss, val_loss])
+            # load the losses once the training is done
+            train_loss = [pt.load(join(train_path, "cl_p_model", f"loss{m}_train_cl_p.pt")),
+                          pt.load(join(train_path, "cd_model", f"loss{m}_train_cd.pt"))]
+            val_loss = [pt.load(join(train_path, "cl_p_model", f"loss{m}_val_cl_p.pt")),
+                        pt.load(join(train_path, "cd_model", f"loss{m}_val_cd.pt"))]
 
-            # clean up
-            [os.remove(f) for f in glob(join(train_path, "loader_*.pt"))]
-            [os.remove(f) for f in glob(join(train_path, "cl_p_model", "loss*.pt"))]
-            [os.remove(f) for f in glob(join(train_path, "cd_model", "loss*.pt"))]
-            os.remove(join(train_path, "settings_model_training.pt"))
-            os.remove(join(os.getcwd(), "execute_model_training.sh"))
+            cl_p_ensemble.append(env_model_cl_p.eval())
+            cd_ensemble.append(env_model_cd.eval())
+            losses.append([train_loss, val_loss])
+
+        # clean up
+        [os.remove(f) for f in glob(join(train_path, "loader_*.pt"))]
+        [os.remove(f) for f in glob(join(train_path, "cl_p_model", "loss*.pt"))]
+        [os.remove(f) for f in glob(join(train_path, "cd_model", "loss*.pt"))]
+        os.remove(join(train_path, "settings_model_training.pt"))
+        os.remove(join(os.getcwd(), "execute_model_training.sh"))
 
     # in case only one model is used, then return the loss of the first model
     if len(losses) < 2:

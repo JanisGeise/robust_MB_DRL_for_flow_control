@@ -198,17 +198,20 @@ def main(args):
             # if len(predicted_traj) < buffer size -> discard trajectories from models and go back to CFD
             if len(predicted_traj) < buffer_size:
                 buffer._n_fills = e
+                env_model.start_timer()
                 buffer.fill()
+                env_model.time_cfd_episode()
                 states, actions, rewards = buffer.observations
                 env_model.append_cfd_obs(e)
 
                 # re-train environment models to avoid failed trajectories in the next episode
+                env_model.start_timer()
                 cl_p_models, cd_models, l, obs = wrapper_train_env_model_ensemble(training_path, env_model.obs_cfd,
                                                                                   env_model.len_traj, env.n_states,
                                                                                   buffer_size, env_model.n_models,
                                                                                   n_time_steps=env_model.t_input,
                                                                                   load=True)
-
+                env_model.time_model_training()
             else:
                 # save the model-generated trajectories
                 env_model.save(e, predicted_traj)

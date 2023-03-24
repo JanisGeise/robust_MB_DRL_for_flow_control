@@ -168,8 +168,8 @@ def train_env_models(path: str, env_model_cl_p: EnvironmentModel, env_model_cd: 
 
     # load environment models trained in the previous CFD episode
     if load:
-        env_model_cl_p.load_state_dict(pt.load(join(path, "cl_p_model", f"bestModel_no0_val.pt")))
-        env_model_cd.load_state_dict(pt.load(join(path, "cd_model", f"bestModel_no0_val.pt")))
+        env_model_cl_p.load_state_dict(pt.load(join(path, "cl_p_model", f"bestModel_no{model_no}_val.pt")))
+        env_model_cd.load_state_dict(pt.load(join(path, "cd_model", f"bestModel_no{model_no}_val.pt")))
 
     # train environment models
     if env == "local":
@@ -218,10 +218,10 @@ def execute_model_training_slurm(model_no: int, train_path: str = "examples/run_
     loader_train_cd = pt.load(join(train_path, "loader_train_cd.pt"))
     loader_val_cd = pt.load(join(train_path, "loader_val_cd.pt"))
     train_env_models(train_path, settings["env_model_cl_p"], settings["env_model_cd"],
-                     data_cl_p=[loader_train[model_no - 1], loader_val[model_no - 1]],
-                     data_cd=[loader_train_cd[model_no - 1], loader_val_cd[model_no - 1]],
-                     epochs=settings["epochs"], epochs_cd=settings["epochs_cd"], load=True, model_no=model_no,
-                     env="slurm")
+                     data_cl_p=[loader_train[model_no], loader_val[model_no]],
+                     data_cd=[loader_train_cd[model_no], loader_val_cd[model_no]],
+                     epochs=settings["epochs"], epochs_cd=settings["epochs_cd"], load=settings["load"],
+                     model_no=model_no, env="slurm")
 
 
 if __name__ == "__main__":
