@@ -74,7 +74,11 @@ def train_model(model: pt.nn.Module, dataloader_train: pt.utils.data.DataLoader,
     :return: training and validation loss as list
     """
     if not exists(save_dir):
-        os.mkdir(save_dir)
+        # when running multiple trainings parallel, multiple processes try to create this directory at the same time
+        try:
+            os.mkdir(save_dir)
+        except FileExistsError:
+            print(f"Info: directory '{save_dir}' was already created by another process.")
 
     # optimizer settings
     criterion = pt.nn.MSELoss()
