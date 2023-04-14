@@ -161,19 +161,18 @@ def main(args):
             # in 1st episode: CFD data is used to train environment models for 1st time
             env_model.start_timer()
             if e == starting_episode:
-                cl_p_models, cd_models, l, obs = wrapper_train_env_model_ensemble(training_path, env_model.obs_cfd,
-                                                                                  env_model.len_traj, env.n_states,
-                                                                                  buffer_size, env_model.n_models,
-                                                                                  n_time_steps=env_model.t_input,
-                                                                                  env=executer)
+                model_ensemble, l, obs = wrapper_train_env_model_ensemble(training_path, env_model.obs_cfd,
+                                                                          env_model.len_traj, env.n_states,
+                                                                          buffer_size, env_model.n_models,
+                                                                          n_time_steps=env_model.t_input, env=executer)
 
             # ever CFD episode: models are loaded and re-trained based on CFD data of the current & last CFD episode
             else:
-                cl_p_models, cd_models, l, obs = wrapper_train_env_model_ensemble(training_path, env_model.obs_cfd,
-                                                                                  env_model.len_traj, env.n_states,
-                                                                                  buffer_size, env_model.n_models,
-                                                                                  load=True, env=executer,
-                                                                                  n_time_steps=env_model.t_input)
+                model_ensemble, l, obs = wrapper_train_env_model_ensemble(training_path, env_model.obs_cfd,
+                                                                          env_model.len_traj, env.n_states,
+                                                                          buffer_size, env_model.n_models,
+                                                                          load=True, env=executer,
+                                                                          n_time_steps=env_model.t_input)
             env_model.time_model_training()
 
             # save train- and validation losses of the environment models
@@ -187,7 +186,7 @@ def main(args):
         else:
             # generate trajectories from initial states using policy from previous episode, fill model buffer with them
             env_model.start_timer()
-            predicted_traj, current_policy_loss = fill_buffer_from_models(cl_p_models, cd_models, e, training_path,
+            predicted_traj, current_policy_loss = fill_buffer_from_models(model_ensemble, e, training_path,
                                                                           observation=obs, n_probes=env.n_states,
                                                                           n_input=env_model.t_input,
                                                                           len_traj=env_model.len_traj,
@@ -206,11 +205,10 @@ def main(args):
 
                 # re-train environment models to avoid failed trajectories in the next episode
                 env_model.start_timer()
-                cl_p_models, cd_models, l, obs = wrapper_train_env_model_ensemble(training_path, env_model.obs_cfd,
-                                                                                  env_model.len_traj, env.n_states,
-                                                                                  buffer_size, env_model.n_models,
-                                                                                  n_time_steps=env_model.t_input,
-                                                                                  load=True)
+                model_ensemble, l, obs = wrapper_train_env_model_ensemble(training_path, env_model.obs_cfd,
+                                                                          env_model.len_traj, env.n_states,
+                                                                          buffer_size, env_model.n_models,
+                                                                          n_time_steps=env_model.t_input, load=True)
                 env_model.time_model_training()
             else:
                 # save the model-generated trajectories

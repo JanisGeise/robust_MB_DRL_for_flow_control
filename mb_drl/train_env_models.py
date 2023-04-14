@@ -134,28 +134,20 @@ def train_model(model: pt.nn.Module, dataloader_train: pt.utils.data.DataLoader,
     if env == "local":
         return training_loss, validation_loss
     else:
-        if save_dir.endswith("cd_model"):
-            pt.save(training_loss, join(save_dir, f"loss{no}_train_cd.pt"))
-            pt.save(validation_loss, join(save_dir, f"loss{no}_val_cd.pt"))
-        else:
-            pt.save(training_loss, join(save_dir, f"loss{no}_train_cl_p.pt"))
-            pt.save(validation_loss, join(save_dir, f"loss{no}_val_cl_p.pt"))
+        pt.save(training_loss, join(save_dir, f"loss{no}_train.pt"))
+        pt.save(validation_loss, join(save_dir, f"loss{no}_val.pt"))
 
 
-def train_env_models(path: str, env_model_cl_p: EnvironmentModel, env_model_cd: EnvironmentModel, data_cl_p: list,
-                     data_cd: list, epochs: int = 2500, epochs_cd: int = 2500, load: bool = False, env: str = "local",
-                     model_no: int = 0) -> list or None:
+def train_env_models(path: str, env_model: EnvironmentModel, data: list, epochs: int = 2500, load: bool = False,
+                     env: str = "local", model_no: int = 0) -> list or None:
     """
     initializes two environment models, trains and validates them based on the sampled data from the CFD
     environment. The models are trained and validated using the previous 2 episodes run in the CFD environment
 
     :param path: path to the directory where the training is currently running
-    :param env_model_cl_p: environment model for predicting cl- & p
-    :param env_model_cd: environment model for predicting cd
-    :param data_cl_p: [dataloader_train, dataloader_val]
-    :param data_cd: [dataloader_train, dataloader_val]
-    :param epochs: number of epochs for training the cl-p-environment model
-    :param epochs_cd: number of epochs for training the cd-environment model
+    :param env_model: environment model for predicting cl-, cd & p
+    :param data: [dataloader_train, dataloader_val]
+    :param epochs: number of epochs for training the environment model
     :param load: flag if models of last episodes should be used as initialization
     :param env: environment, either 'local' or 'slurm', is set in 'run_training.py'
     :param model_no: number of the environment model within the ensemble
@@ -172,29 +164,19 @@ def train_env_models(path: str, env_model_cl_p: EnvironmentModel, env_model_cd: 
 
     # load environment models trained in the previous CFD episode
     if load:
-        env_model_cl_p.load_state_dict(pt.load(join(path, "cl_p_model", f"bestModel_no{model_no}_val.pt")))
-        env_model_cd.load_state_dict(pt.load(join(path, "cd_model", f"bestModel_no{model_no}_val.pt")))
+        env_model.load_state_dict(pt.load(join(path, "cl_p_model", f"bestModel_no{model_no}_val.pt")))
 
     # train environment models
     if env == "local":
-        train_loss, val_loss = train_model(env_model_cl_p.to(device), dataloader_train=data_cl_p[0],
-                                           dataloader_val=data_cl_p[1], save_dir=join(path, "cl_p_model"),
-                                           epochs=epochs, save_name=f"bestModel_no", no=model_no, env=env)
+        train_loss, val_loss = train_model(env_model.to(device), dataloader_train=data[0], dataloader_val=data[1],
+                                           save_dir=join(path, "env_model"), epochs=epochs, save_name=f"bestModel_no",
+                                           no=model_no, env=env)
 
-        print(f"starting training for cd model no. {model_no}")
-        train_loss_cd, val_loss_cd = train_model(env_model_cd.to(device), dataloader_train=data_cd[0],
-                                                 dataloader_val=data_cd[1], save_name=f"bestModel_no", no=model_no,
-                                                 epochs=epochs_cd, save_dir=join(path, "cd_model"), env=env)
-
-        return [[train_loss, train_loss_cd], [val_loss, val_loss_cd]]
+        return [train_loss, val_loss]
 
     else:
-        train_model(env_model_cl_p.to(device), dataloader_train=data_cl_p[0], dataloader_val=data_cl_p[1],
-                    save_dir=join(path, "cl_p_model"), epochs=epochs, save_name=f"bestModel_no", no=model_no, env=env)
-
-        print(f"starting training for cd model no. {model_no}")
-        train_model(env_model_cd.to(device), dataloader_train=data_cd[0], dataloader_val=data_cd[1],
-                    save_name=f"bestModel_no", no=model_no, epochs=epochs_cd, save_dir=join(path, "cd_model"), env=env)
+        train_model(env_model.to(device), dataloader_train=data[0], dataloader_val=data[1],
+                    save_dir=join(path, "env_model"), epochs=epochs, save_name=f"bestModel_no", no=model_no, env=env)
 
 
 def execute_model_training_slurm(model_no: int, train_path: str = "examples/run_training/") -> None:
@@ -219,13 +201,8 @@ def execute_model_training_slurm(model_no: int, train_path: str = "examples/run_
     settings = pt.load(join(train_path, "settings_model_training.pt"))
     loader_train = pt.load(join(train_path, "loader_train.pt"))
     loader_val = pt.load(join(train_path, "loader_val.pt"))
-    loader_train_cd = pt.load(join(train_path, "loader_train_cd.pt"))
-    loader_val_cd = pt.load(join(train_path, "loader_val_cd.pt"))
-    train_env_models(train_path, settings["env_model_cl_p"], settings["env_model_cd"],
-                     data_cl_p=[loader_train[model_no], loader_val[model_no]],
-                     data_cd=[loader_train_cd[model_no], loader_val_cd[model_no]],
-                     epochs=settings["epochs"], epochs_cd=settings["epochs_cd"], load=settings["load"],
-                     model_no=model_no, env="slurm")
+    train_env_models(train_path, settings["env_model"], data=[loader_train[model_no], loader_val[model_no]],
+                     epochs=settings["epochs"], load=settings["load"], model_no=model_no, env="slurm")
 
 
 if __name__ == "__main__":
