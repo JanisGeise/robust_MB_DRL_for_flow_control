@@ -298,7 +298,7 @@ def predict_trajectories(env_model: list, episode: int, path: str, states: pt.Te
     # test model: loop over all test data and predict the trajectories based on given initial state and actions
     # for each model of the ensemble: load the current state dict
     for model in range(len(env_model)):
-        env_model[model].load_state_dict(pt.load(join(path, "cl_p_model", f"bestModel_no{model}_val.pt")))
+        env_model[model].load_state_dict(pt.load(join(path, "env_model", f"bestModel_no{model}_val.pt")))
 
     # load current policy network (saved at the end of the previous episode)
     policy_model = (pt.jit.load(open(join(path, f"policy_trace_{episode - 1}.pt"), "rb"))).eval()

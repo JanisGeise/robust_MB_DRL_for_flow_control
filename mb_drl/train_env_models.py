@@ -164,7 +164,7 @@ def train_env_models(path: str, env_model: EnvironmentModel, data: list, epochs:
 
     # load environment models trained in the previous CFD episode
     if load:
-        env_model.load_state_dict(pt.load(join(path, "cl_p_model", f"bestModel_no{model_no}_val.pt")))
+        env_model.load_state_dict(pt.load(join(path, "env_model", f"bestModel_no{model_no}_val.pt")))
 
     # train environment models
     if env == "local":
