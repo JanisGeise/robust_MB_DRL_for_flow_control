@@ -31,18 +31,20 @@ def average_exec_times_over_seeds(path: str) -> dict:
                 times[key].append(float(tmp[0].split(" ")[1]))
 
     # average exec times over all seeds -> note: due to avg. the times will not exactly add up to 100%
+    t = {}
     for key in times:
+        t[f"{key}_std"] = pt.std(pt.tensor(times[key]))
         times[key] = pt.mean(pt.tensor(times[key]))
-
+    times.update(t)
     return times
 
 
 if __name__ == "__main__":
     setup = {
         "path": r"/home/janis/Hiwi_ISM/results_drlfoam_MB/run/final_routine/",
-        "trainings": ["e80_r10_b10_f10_MB_1model/", "e80_r10_b10_f10_MB_5models_split_between_all_models/",
-                      "e80_r10_b10_f10_MB_10models_split_between_all_models/"],
-                      # "e80_r10_b10_f10_MB_20models_split_between_all_models/"],
+        "trainings": ["e80_r10_b10_f6_MB_1model/", "e80_r10_b10_f6_MB_5models_split_between_all_models/",
+                      "e80_r10_b10_f6_MB_10models_split_between_all_models/",
+                      "e80_r10_b10_f6_MB_20models_split_between_all_models/"],
         "labels": ["$N_{models} = 1$", "$N_{models} = 5$", "$N_{models} = 10$", "$N_{models} = 20$"],
         "legend": ["CFD episode", "MB episode", "model training", "PPO training", "other"],
         "color": ["red", "green", "blue", "darkviolet", "black"],
@@ -57,14 +59,15 @@ if __name__ == "__main__":
     for idx, times in enumerate(t_exec):
         bot = 0
         for l, key in enumerate(times):
-            if key != "t_total":
+            if key != "t_total" and key[-4:] != "_std":
                 if idx == 0:
                     b = ax.bar(setup["labels"][idx], times[key], color=setup["color"][l], label=setup["legend"][l], bottom=bot)
-                else:
+                elif key[-4:] != "_std":
                     b = ax.bar(setup["labels"][idx], times[key], color=setup["color"][l], bottom=bot)
 
                 if key != "ppo" and key != "other":
-                    t = "{:.2f} min".format((times[key] / 100) * times["t_total"] / 60)
+                    t = "{:.2f} min\n".format((times[key] / 100) * times["t_total"] / 60)
+                    t += "$\pm$ {:.2f} min".format((times[f"{key}_std"] / 100) * times["t_total"] / 60)
                     ax.bar_label(b, label_type="center", labels=[t])
                 bot += times[key]
     ax.set_ylabel("avg. execution time [\%]", usetex=True, fontsize=13)
@@ -82,7 +85,7 @@ if __name__ == "__main__":
     for idx, times in enumerate(t_exec):
         bot = 0
         for l, key in enumerate(times):
-            if key != "t_total":
+            if key != "t_total" and key[-4:] != "_std":
                 if idx == 0:
                     ax.bar(setup["labels"][idx], (times[key] / 100) * times["t_total"] / 60, color=setup["color"][l],
                            label=setup["legend"][l], bottom=bot)
