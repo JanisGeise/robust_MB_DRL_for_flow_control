@@ -19,6 +19,7 @@ from drlfoam.execution import LocalBuffer, SlurmBuffer, SlurmConfig
 
 from examples.get_number_of_probes import get_number_of_probes
 from drlfoam.environment.env_model_rotating_cylinder_new_training_routine import *
+from drlfoam.environment.predict_trajectories import fill_buffer_from_models
 
 
 def print_statistics(actions, rewards):
@@ -190,7 +191,8 @@ def main(args):
                                                                           observation=obs, n_probes=env.n_states,
                                                                           n_input=env_model.t_input,
                                                                           len_traj=env_model.len_traj,
-                                                                          buffer_size=buffer_size, agent=agent)
+                                                                          buffer_size=buffer_size, agent=agent,
+                                                                          env=executer)
             env_model.time_mb_episode()
             env_model.policy_loss.append(current_policy_loss)
 
