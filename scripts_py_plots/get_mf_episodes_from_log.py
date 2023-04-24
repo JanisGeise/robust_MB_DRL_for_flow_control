@@ -14,12 +14,12 @@ if __name__ == "__main__":
     mf_episodes, n_episodes = [], []
 
     for seed in sorted(glob(path + case + "*.log"), key=lambda x: int(x.split(".")[0][-1])):
-        with open(seed, "rb") as f:
+        with open(seed, "r") as f:
             data = f.readlines()
-        mf_episodes.append([data[line].decode("utf-8") for line in range(len(data)-1) if
-                            data[line].startswith(b"Start of episode ") and data[line+1].startswith(b"Runner ")])
-        n_episodes.append(int([data[line].decode("utf-8") for line in range(len(data)) if
-                          data[line].startswith(b"Start of episode ")][-1].split(" ")[-1].strip("\n")))
+        mf_episodes.append([data[line] for line in range(len(data)-1) if
+                            data[line].startswith("Start of episode ") and data[line+1].startswith("Runner ")])
+        n_episodes.append(int([data[line] for line in range(len(data)) if
+                          data[line].startswith("Start of episode ")][-1].split(" ")[-1].strip("\n")))
 
     # get the number of the MF-episodes and MB-episodes
     mf_episodes = [[int(e.split(" ")[-1].strip("\n")) for e in c] for c in mf_episodes]

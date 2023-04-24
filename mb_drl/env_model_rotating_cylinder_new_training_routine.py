@@ -1,16 +1,18 @@
 """
+    TODO: update doc
+
     This script is implements the model-based part for the PPO-training routine. It contains the environment model class
     as well as functions for loading and sorting the trajectories, training the model ensembles and generating the
     model-based trajectories for the PPO-training.
 """
-import os
 import sys
 import torch as pt
 
 from time import time
 from glob import glob
 from os.path import join
-from typing import Tuple, List, Union
+from typing import Tuple, List
+from os import chdir, getcwd, remove, environ
 from torch.utils.data import DataLoader, TensorDataset, random_split
 
 from drlfoam.agent import PPOAgent
@@ -22,7 +24,7 @@ from drlfoam.execution import SlurmConfig
 from drlfoam.execution.manager import TaskManager
 from drlfoam.execution.slurm import submit_and_wait
 
-BASE_PATH = os.environ.get("DRL_BASE", "")
+BASE_PATH = environ.get("DRL_BASE", "")
 sys.path.insert(0, BASE_PATH)
 
 
@@ -73,12 +75,15 @@ class SetupEnvironmentModel:
         self.obs_cfd.append(join(self.path, f"observations_{e}.pt"))
 
     def save_losses(self, episode, loss):
-        # save train- and validation losses of the environment models
+        # save train- and validation losses of the environment models (if losses are available)
         if self.n_models == 1:
-            losses = {"train_loss": loss[0][0], "val_loss": loss[1][0]}
+            try:
+                losses = {"train_loss": loss[0][0], "val_loss": loss[1][0]}
+            except IndexError:
+                losses = {"train_loss": [], "val_loss": []}
             self.save(episode, losses, name="env_model_loss")
         else:
-            losses = {"train_loss": [l[0][0] for l in loss], "val_loss": [l[0][1] for l in loss]}
+            losses = {"train_loss": [l[0][0] for l in loss if l[0]], "val_loss": [l[0][1] for l in loss if l[0]]}
             self.save(episode, losses, name="env_model_loss")
 
     def save(self, episode, data, name: str = "observations"):
@@ -361,7 +366,7 @@ def predict_trajectories(env_model: list, episode: int, path: str, states: pt.Te
     status = check_trajectories(cl=cl_rescaled, cd=cd_rescaled, actions=act_rescaled, alpha=traj_alpha[0, :],
                                 beta=traj_beta[0, :])
 
-    # TODO: reward fct for fluidic pinball?
+    # TODO: add reward fct for fluidic pinball -> choose reward fct based on current environment
     output = {"states": p_rescaled, "cl": cl_rescaled, "cd": cd_rescaled, "alpha": traj_alpha[0, :].to("cpu"),
               "beta": traj_beta[0, :].to("cpu"), "actions": act_rescaled, "generated_by": "env_models",
               "rewards": 3.0 - (cd_rescaled + 0.1 * cl_rescaled.abs())}
@@ -451,6 +456,15 @@ def fill_buffer_from_models(env_model: list, episode: int, path: str, observatio
         no = pt.randint(low=0, high=observation["cd"].size()[1], size=(1, 1)).item()
 
         # then predict the trajectory (the env. models are loaded in predict trajectory function)
+        # TODO start: parallelize predictions when running training on cluster
+        #               1. save obs
+        #               2. each proc predicts traj -> param 'no' for sampling init states
+        #               3. if traj valid then compute r_model_tmp, ...
+        #               4. else save invalid traj & 'ok' param
+        #               5. read in all the data once all procs finished -> if valid: append pred, *_model_tmp, else:
+        #               6. count all invalid traj, print the info to log, set failed = N_discarded_traj
+        #               7. start N_discard new procs and repeat until enough traj generated or failed >= max_iter
+        #               8. either go back to CFD or asses model_performance
         pred, ok = predict_trajectories(env_model, episode, path, observation["states"][:, :, no],
                                         observation["cd"][:, no], observation["cl"][:, no],
                                         observation["actions"][:, no], observation["alpha"][:, no],
@@ -479,6 +493,8 @@ def fill_buffer_from_models(env_model: list, episode: int, path: str, observatio
             counter += 1
             failed = 0
 
+            # TODO end
+
         else:
             print_trajectory_info(counter, buffer_size, failed, pred, ok[1])
             failed += 1
@@ -506,7 +522,6 @@ def generate_feature_labels(cd, states: pt.Tensor = None, actions: pt.Tensor = N
     :param len_traj: length of the trajectories
     :param n_t_input: number of input time steps for the environment model
     :param n_probes: number of probes placed in the flow field
-    :param cd_model: flag weather feature-label pairs should be created for cd- or cl-p model
     :return: tensor with features and tensor with corresponding labels, sorted as [batches, N_features (or labels)]
     """
 
@@ -517,8 +532,7 @@ def generate_feature_labels(cd, states: pt.Tensor = None, actions: pt.Tensor = N
               "are not given!")
         exit(0)
 
-    # TODO: this will be replaced by actual n_* later -> fluidic pinball
-    n_actions, n_cl, n_cd = 1, 1, 1
+    n_actions, n_cl, n_cd = 1, 1, 1     # TODO: this will be replaced by actual n_* later -> fluidic pinball
     n_traj, shape_input = cd.size()[1], (len_traj - n_t_input, n_t_input * (n_probes + n_cl + n_cd + n_actions))
     feature, label = [], []
     for n in range(n_traj):
@@ -558,6 +572,33 @@ def create_subset_of_data(data: TensorDataset, n_models: int, batch_size: int = 
     return [DataLoader(i, batch_size=batch_size, shuffle=True, drop_last=False) for i in random_split(data, idx)]
 
 
+def create_slurm_config(case: str, exec_cmd: str) -> SlurmConfig:
+    """
+    creates SLURM config for executing model training & prediction of MB-trajectories in parallel
+
+    :param case: job name
+    :param exec_cmd: python script which shall be executed plus optional parameters -> this str is executed by slurm
+    :return: slurm config
+    """
+    if pt.cuda.is_available():
+        partition = "gpu02_queue"
+        task_per_node = 1
+    else:
+        partition = "standard"
+        task_per_node = 4
+    slurm_config = SlurmConfig(partition=partition, n_nodes=1, n_tasks_per_node=task_per_node, job_name=case,
+                               modules=["python/3.8.2"], time="00:15:00",
+                               commands=[f"source {join('~', 'drlfoam', 'pydrl', 'bin', 'activate')}",
+                                         f"source {join('~', 'drlfoam', 'setup-env --container')}",
+                                         f"cd {join('~', 'drlfoam', 'drlfoam', 'environment')}", exec_cmd])
+
+    # add number of GPUs and write script to cwd
+    if pt.cuda.is_available():
+        slurm_config._options["--gres"] = "gpu:1"
+
+    return slurm_config
+
+
 def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: int, n_states: int, buffer: int,
                                      n_models: int, n_time_steps: int = 30, e_re_train: int = 1000,
                                      load: bool = False, env: str = "local", n_layers: int = 3,
@@ -577,7 +618,7 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
     :param env: environment, either 'local' or 'slurm', is set in 'run_training.py'
     :param n_layers: number of neurons per layer for the environment model
     :param n_neurons: number of hidden layers for the environment model
-    :return: list with: [trained cl-p-ensemble, train- and validation losses, loaded trajectories from CFD]
+    :return: trained model-ensemble, train- and validation losses, initial states for the following MB-episodes
     """
     model_ensemble, losses = [], []
     obs = check_cfd_data(cfd_obs, len_traj=len_traj, n_probes=n_states, buffer_size=buffer, n_e_cfd=len(cfd_obs))
@@ -640,43 +681,37 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
                 join(train_path, "settings_model_training.pt"))
 
         # write shell script for executing the model training -> cwd on HPC = 'drlfoam/examples/'
-        if pt.cuda.is_available():
-            partition = "gpu02_queue"
-            task_per_node = 1
-        else:
-            partition = "standard"
-            task_per_node = 4
-        config = SlurmConfig(partition=partition, n_nodes=1, n_tasks_per_node=task_per_node, job_name="model_train",
-                             modules=["python/3.8.2"], time="00:30:00",
-                             commands=[f"source {join('~', 'drlfoam', 'pydrl', 'bin', 'activate')}",
-                                       f"source {join('~', 'drlfoam', 'setup-env --container')}",
-                                       f"cd {join('~', 'drlfoam', 'drlfoam', 'environment')}",
-                                       "python3 train_env_models.py -m $1 -p $2"])
-
-        # add number of GPUs and write script to cwd
-        if pt.cuda.is_available():
-            config._options["--gres"] = "gpu:1"
-        config.write(join(os.getcwd(), "execute_model_training.sh"))
+        current_cwd = getcwd()
+        config = create_slurm_config(case="model_train", exec_cmd="python3 train_env_models.py -m $1 -p $2")
+        config.write(join(current_cwd, train_path, "execute_model_training.sh"))
         manager = TaskManager(n_runners_max=10)
 
+        # go to training directory and execute the shell script for model training
+        chdir(join(current_cwd, train_path))
         for m in range(n_models):
             manager.add(submit_and_wait, [f"execute_model_training.sh", str(m), train_path])
         manager.run()
+
+        # then go back to the 'drlfoam/examples' directory and continue training
+        chdir(current_cwd)
 
         for m in range(n_models):
             # update path (relative path not working on cluster)
             train_path = join(BASE_PATH, "examples", train_path)
 
-            # load the losses once the training is done
+            # load the losses once the training is done -> in case job gets canceled there is no loss available
             model_ensemble.append(env_model.eval())
-            losses.append([pt.load(join(train_path, "env_model", f"loss{m}_train.pt")),
-                           pt.load(join(train_path, "env_model", f"loss{m}_val.pt"))])
+            try:
+                losses.append([pt.load(join(train_path, "env_model", f"loss{m}_train.pt")),
+                               pt.load(join(train_path, "env_model", f"loss{m}_val.pt"))])
+            except FileNotFoundError:
+                losses.append([[], []])
 
         # clean up
-        [os.remove(f) for f in glob(join(train_path, "loader_*.pt"))]
-        [os.remove(f) for f in glob(join(train_path, "env_model", "loss*.pt"))]
-        os.remove(join(train_path, "settings_model_training.pt"))
-        os.remove(join(os.getcwd(), "execute_model_training.sh"))
+        [remove(f) for f in glob(join(train_path, "loader_*.pt"))]
+        [remove(f) for f in glob(join(train_path, "env_model", "loss*.pt"))]
+        remove(join(train_path, "settings_model_training.pt"))
+        remove(join(train_path, "execute_model_training.sh"))
 
     # in case only one model is used, then return the loss of the first model
     if len(losses) < 2:
