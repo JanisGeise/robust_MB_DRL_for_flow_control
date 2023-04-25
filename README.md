@@ -39,7 +39,7 @@ MB-version. These scripts can e.g. be downloaded and pasted into an existing (lo
 located in the *mb_drl* directory and need to be sorted into *drlfoam* as follows:
 
 - *create_dummy_policy.py*, *run_training.py* and *get_number_of_probes.py* have to be located in *drlfoam/examples/*
-- *rotating_cylinder.py*, *env_model_rotating_cylinder_new_training_routine.py* and *correct_env_model_error.py* have to
+- *execute_prediction.py*, *env_model_rotating_cylinder_new_training_routine.py*, *train_env_models.py* and *predict_trajectories.py* have to
   be located in *drlfoam/drlfoam/environment/*
 
 Alternatively, a completed MB-version of *drlfoam* can be found [here](https://github.com/JanisGeise/drlfoam/tree/mb_drl), which is forked from the
@@ -55,6 +55,11 @@ It is important to note that the training routine implemented in these scripts c
 The overall runtimes of these scripts are generally in the order of minutes up to approximately one hour when executed on a local machine, depending on the setup.
 The *test_env_models* directory as well as the *scripts_py_plots* directory is not required for conducting model-free or model-based trainings.
 The additional requirements for using the scripts in the *test_env_models* directory can be found in the [requirements.txt](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/blob/main/requirements.txt)
+
+**Note: these scripts may not fully work with the current implementation in 
+*env_model_rotating_cylinder_new_training_routine.py*. In order to use these scripts, the version of
+[submission of the report](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/tree/submission)
+is required. This applies for scripts conducting parameter studies (_scripts_py_plots_ directory) as well.**
 
 ### Installation and running a training
 The installation of *drlfoam* is thoroughly described in the [drlfoam](https://github.com/OFDataCommittee/drlfoam)
@@ -77,7 +82,6 @@ The scripts *compare_training_routines.py*, *influence_buffer_and_trajectory_len
 *influence_network_architecture_new_training* and *influence_ratio_MB_MF_episodes.py* can be used for conducting and post-precessing
 parameter studies regarding the MF- and MB-training. Further information on how to use these scripts can be found in the documentation
 at the top of each script.
-
 
 ## Troubleshooting
 In case something is not working as expected or if you find any bugs, please feel free to open up a new

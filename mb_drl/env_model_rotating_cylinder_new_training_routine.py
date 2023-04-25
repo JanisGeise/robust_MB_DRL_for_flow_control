@@ -1,9 +1,7 @@
 """
-    TODO: update doc
-
     This script is implements the model-based part for the PPO-training routine. It contains the environment model class
-    as well as functions for loading and sorting the trajectories, training the model ensembles and generating the
-    model-based trajectories for the PPO-training.
+    as well as functions for loading and sorting the trajectories, generating feature-label pairs and is responsible for
+    managing the execution of the model-training.
 """
 import sys
 import torch as pt
