@@ -2,7 +2,7 @@
     brief:
         - this script conducts a parameter study on how the model architecture wrt number of hidden layers and neurons
           influences the prediction accuracy
-        - here the new training routine as implemented in the 'env_model_rotating_cylinder_new_training_routine.py'
+        - here the new training routine as implemented in the 'env_model_rotating_cylinder.py'
           script is used
         - the PPO-training is simulated by using trajectory data of a MF-training in order to accelerate the parameter
           study
@@ -10,7 +10,7 @@
     dependencies:
         - 'influence_model_architecture.py' from the 'test_env_models' directory for plotting the L1- and L2-losses
         - 'compare_training_routines.py' for simulating the PPO-training routine of the MB-training
-        - 'env_model_rotating_cylinder_new_training_routine.py' from the 'mb_drl' directory for executing the
+        - 'env_model_rotating_cylinder.py' from the 'mb_drl' directory for executing the
           model training
 
     prerequisites:
@@ -25,7 +25,7 @@ from torch import manual_seed
 
 from compare_training_routines import simulate_ppo_training
 from test_env_models.influence_model_architecture import plot_losses
-from mb_drl.env_model_rotating_cylinder_new_training_routine import wrapper_train_env_model_ensemble as train_routine
+from mb_drl.env_model_rotating_cylinder import wrapper_train_env_model_ensemble as train_routine
 
 
 def resort_trajectories(trajectories: List[dict]) -> dict:

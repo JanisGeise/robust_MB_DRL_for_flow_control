@@ -18,7 +18,7 @@ from drlfoam.environment import RotatingCylinder2D
 from drlfoam.execution import LocalBuffer, SlurmBuffer, SlurmConfig
 
 from examples.get_number_of_probes import get_number_of_probes
-from drlfoam.environment.env_model_rotating_cylinder_new_training_routine import *
+from drlfoam.environment.env_model_rotating_cylinder import *
 from drlfoam.environment.predict_trajectories import fill_buffer_from_models
 
 

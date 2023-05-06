@@ -1,5 +1,7 @@
 # Robust model-based deep reinforcement learning for flow control
 ## Abstract
+TODO: update once the final results are available
+
 Active flow control has the potential of achieving remarkable drag reductions in applications for fluid mechanics, when 
 combined with deep reinforcement learning (DRL). The high computational demands for CFD simulations currently limits the 
 applicability of DRL to rather simple cases, such as the flow past a cylinder, as a consequence of the large amount of simulations 
@@ -20,7 +22,7 @@ which were encountered in the subsequently conducted model-based trainings as we
 ## Overview
 This student thesis project aims to implement a model-based deep reinforcement learning algorithm for controlling the
 flow past a cylinder. Therefore, the [drlfoam](https://github.com/OFDataCommittee/drlfoam) repository, which already 
-provides a model-free version is used as a starting point. The full report of this thesis can be found [here](...).
+provides a model-free version is used as a starting point. The full report of this thesis can be found [here](#report).
 
 This project is a continuation of the work done by [Darshan Thummar](https://github.com/darshan315/flow_past_cylinder_by_DRL) and
 [Fabian Gabriel](https://github.com/FabianGabriel/Active_flow_control_past_cylinder_using_DRL), a first attempt to use a model-based
@@ -28,7 +30,8 @@ approach in order to accelerate the training process was implemented by [Eric Sc
 
 **Note: The encountered stability issues in a model-based training described in the report as well as in the overview
 notebook were a consequence of an implementation error when computing the action in the model-based episodes. This error
-was discovered after the [submission of the report](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/tree/submission) and corrected afterwards ([commit](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/commit/b0e3b8c8322a72aec1a7314aa8b93f7369e4f67f)).**
+was discovered after the [submission of the report](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/tree/submission)
+and corrected afterwards ([commit](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/commit/b0e3b8c8322a72aec1a7314aa8b93f7369e4f67f)).**
 
 ## Getting started
 ### General information
@@ -39,12 +42,21 @@ MB-version. These scripts can e.g. be downloaded and pasted into an existing (lo
 located in the *mb_drl* directory and need to be sorted into *drlfoam* as follows:
 
 - *create_dummy_policy.py*, *run_training.py* and *get_number_of_probes.py* have to be located in *drlfoam/examples/*
-- *execute_prediction.py*, *env_model_rotating_cylinder_new_training_routine.py*, *train_env_models.py* and *predict_trajectories.py* have to
+- *execute_prediction.py*, *env_model_rotating_cylinder.py*, *train_env_models.py* and *predict_trajectories.py* have to
   be located in *drlfoam/drlfoam/environment/*
+- *rotating_cylinder.py* in *drlfoam/drlfoam/environment/* can be replaced with this version of *rotating_cylinder.py*
 
 Alternatively, a completed MB-version of *drlfoam* can be found [here](https://github.com/JanisGeise/drlfoam/tree/mb_drl), which is forked from the
 [original drlfoam](https://github.com/OFDataCommittee/drlfoam) repository. The remaining setup is the same as presented in the
 *Readme* file of the *drlfoam* repository.
+
+### Outdated scripts
+Some scripts were developed during the thesis and are not used anymore. Further, some scripts may not work anymore since
+there have been various changes since the submission of the report. [This table](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/blob/main/outdated_scripts.MD)
+lists all outdated scripts, which are either not used anymore or which may not work anymore. These scripts will most likely not be updated in the future. The
+referenced commit for each script indicates the point until these script should work, in some cases, e.g. scripts for 
+parameter studies may also work in later versions. All scripts, which are not listed here are still working and used in 
+the MB-training routine or for post-processing the results.
 
 ### Testing the different approaches of modeling the CFD environment
 All approaches of modeling the CFD environment with fully-connected neural networks presented in the report are located in the *test_env_models* directory.
@@ -55,11 +67,6 @@ It is important to note that the training routine implemented in these scripts c
 The overall runtimes of these scripts are generally in the order of minutes up to approximately one hour when executed on a local machine, depending on the setup.
 The *test_env_models* directory as well as the *scripts_py_plots* directory is not required for conducting model-free or model-based trainings.
 The additional requirements for using the scripts in the *test_env_models* directory can be found in the [requirements.txt](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/blob/main/requirements.txt)
-
-**Note: these scripts may not fully work with the current implementation in 
-*env_model_rotating_cylinder_new_training_routine.py*. In order to use these scripts, the version of
-[submission of the report](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/tree/submission)
-is required. This applies for scripts conducting parameter studies (_scripts_py_plots_ directory) as well.**
 
 ### Installation and running a training
 The installation of *drlfoam* is thoroughly described in the [drlfoam](https://github.com/OFDataCommittee/drlfoam)

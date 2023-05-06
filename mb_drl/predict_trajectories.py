@@ -3,7 +3,7 @@
     - generating the trajectory
     - checking the trajectory for invalid values
     - assessing the model performance in order to determine if a switching back to CFD is required (switching criteria
-      is implemented in 'env_model_rotating_cylinder.py')
+      is implemented in 'env_model_rotating_cylinder_old_routine.py')
 """
 import os
 import sys

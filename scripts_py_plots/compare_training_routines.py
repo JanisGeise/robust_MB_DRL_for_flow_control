@@ -6,7 +6,7 @@
 
     dependencies:
         - 'plot_ppo_results.py' for plotting the training- and validation losses
-        - 'env_model_rotating_cylinder.py' & 'env_model_rotating_cylinder_new_training_routine.py' as training routines
+        - 'env_model_rotating_cylinder_old_routine.py' & 'env_model_rotating_cylinder.py' as training routines
           which are to be compared (MB-DRL)
 
     prerequisites:
@@ -23,9 +23,9 @@ from torch import manual_seed
 from typing import List, Tuple
 
 from plot_ppo_results import plot_train_validation_loss
-from mb_drl.env_model_rotating_cylinder import denormalize_data, normalize_data
-from mb_drl.env_model_rotating_cylinder import wrapper_train_env_model_ensemble as original_training_routine
-from mb_drl.env_model_rotating_cylinder_new_training_routine import wrapper_train_env_model_ensemble as new_training_routine
+from mb_drl.env_model_rotating_cylinder_old_routine import denormalize_data, normalize_data
+from mb_drl.env_model_rotating_cylinder_old_routine import wrapper_train_env_model_ensemble as original_training_routine
+from mb_drl.env_model_rotating_cylinder import wrapper_train_env_model_ensemble as new_training_routine
 
 
 def plot_trajectories_of_probes(path: str, real_data: dict, predicted_data: List[dict], color: list, legend: list,

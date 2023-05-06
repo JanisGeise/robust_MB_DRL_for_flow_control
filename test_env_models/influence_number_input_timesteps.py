@@ -3,7 +3,7 @@
         run parameter study to get the total prediction error of the probes, cd and cl depending on the number of time
         steps used as input for the environment model(s)
 
-        Note: this script uses the same training routine as implemented in 'mb_drl/env_model_rotating_cylinder.py'
+        Note: this script uses the same training routine as implemented in 'mb_drl/env_model_rotating_cylinder_old_routine.py'
 
     dependencies:
         - 'train_environment_model.py'

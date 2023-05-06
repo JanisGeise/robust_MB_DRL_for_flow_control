@@ -3,7 +3,7 @@
         - implements and trains a fully connected NN-model for approximating the CFD environment using the sampled
           trajectories as trainings-, validation- and test data
         - tries to predict trajectories based on a given initial state and actions
-        - Note: this script uses the same training routine as implemented in 'mb_drl/env_model_rotating_cylinder.py'
+        - Note: this script uses the same training routine as implemented in 'mb_drl/env_model_rotating_cylinder_old_routine.py'
 
         option 1a:
             - using function 'train_test_env_model' trains- and tests only one environment model which is supposed to
