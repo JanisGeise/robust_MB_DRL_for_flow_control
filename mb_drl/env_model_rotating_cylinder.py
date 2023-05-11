@@ -228,7 +228,7 @@ def check_cfd_data(files: list, len_traj: int, n_probes: int, buffer_size: int =
     # if we don't have any trajectories generated within the last 3 CFD episodes, it doesn't make sense to
     # continue with the training
     if cl[:, ok].size()[1] == 0:
-        print("[env_model_rotating_cylinder_old_routine.py]: could not find any valid trajectories from the last 3 CFD episodes!"
+        print("[env_model_rotating_cylinder.py]: could not find any valid trajectories from the last 3 CFD episodes!"
               "\nAborting training.")
         exit(0)
 
@@ -304,12 +304,16 @@ def create_subset_of_data(data: TensorDataset, n_models: int, batch_size: int = 
     return [DataLoader(i, batch_size=batch_size, shuffle=True, drop_last=False) for i in random_split(data, idx)]
 
 
-def create_slurm_config(case: str, exec_cmd: str) -> SlurmConfig:
+def create_slurm_config(case: str, exec_cmd: str, aws: bool = False) -> SlurmConfig:
     """
     creates SLURM config for executing model training & prediction of MB-trajectories in parallel
 
     :param case: job name
     :param exec_cmd: python script which shall be executed plus optional parameters -> this str is executed by slurm
+    :param aws: in case the training is done on AWS, the config looks slightly different (here just an example),
+                the parameter aws=True needs to be set in:
+                 - 'env_model_rotating_cylinder.py', fct. 'wrapper_train_env_model_ensemble' (line 428)
+                 - 'predict_trajectories.py', fct. 'fill_buffer_from_models' (line 94)
     :return: slurm config
     """
     if pt.cuda.is_available():
@@ -318,11 +322,18 @@ def create_slurm_config(case: str, exec_cmd: str) -> SlurmConfig:
     else:
         partition = "standard"
         task_per_node = 4
-    slurm_config = SlurmConfig(partition=partition, n_nodes=1, n_tasks_per_node=task_per_node, job_name=case,
-                               modules=["python/3.8.2"], time="00:15:00",
-                               commands=[f"source {join('~', 'drlfoam', 'pydrl', 'bin', 'activate')}",
-                                         f"source {join('~', 'drlfoam', 'setup-env --container')}",
-                                         f"cd {join('~', 'drlfoam', 'drlfoam', 'environment')}", exec_cmd])
+    if aws:
+        slurm_config = SlurmConfig(partition="queue-1", n_nodes=1, n_tasks_per_node=10, job_name=case,
+                                   modules=["openmpi/4.1.5"], time="00:10:00", constraint="c5a.24xlarge",
+                                   commands=[f"source /{join('fsx', 'OpenFOAM', 'OpenFOAM-v2206', 'etc', 'bashrc')}",
+                                             f"source /{join('fsx', 'drlfoam', 'setup-env')}",
+                                             f"cd /{join('fsx', 'drlfoam', 'drlfoam', 'environment')}", exec_cmd])
+    else:
+        slurm_config = SlurmConfig(partition=partition, n_nodes=1, n_tasks_per_node=task_per_node, job_name=case,
+                                   modules=["python/3.8.2"], time="00:15:00",
+                                   commands=[f"source {join('~', 'drlfoam', 'pydrl', 'bin', 'activate')}",
+                                             f"source {join('~', 'drlfoam', 'setup-env --container')}",
+                                             f"cd {join('~', 'drlfoam', 'drlfoam', 'environment')}", exec_cmd])
 
     # add number of GPUs and write script to cwd
     if pt.cuda.is_available():

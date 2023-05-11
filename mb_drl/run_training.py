@@ -3,12 +3,9 @@
 import sys
 import argparse
 
-from glob import glob
-from time import time
-from os.path import join
 from torch import manual_seed, cuda
 from shutil import copytree, rmtree
-from os import makedirs, chdir, environ, system, getcwd
+from os import makedirs, environ, system
 
 BASE_PATH = environ.get("DRL_BASE", "")
 sys.path.insert(0, BASE_PATH)
@@ -103,9 +100,10 @@ def main(args):
         )
         """
         # for AWS
-        config = SlurmConfig(n_tasks=2, n_nodes=1, partition="c6i", time="00:30:00", modules=["openmpi/4.1.1"],
-                             commands=["source /fsx/OpenFOAM/OpenFOAM-v2206/etc/bashrc",
-                                       "source /fsx/drlfoam/setup-env"])
+        config = SlurmConfig(n_tasks=2, n_nodes=1, partition="queue-1", time="00:30:00", modules=["openmpi/4.1.5"],
+                             constraint = "c5a.24xlarge", commands_pre=["source /fsx/OpenFOAM/OpenFOAM-v2206/etc/bashrc",
+                             "source /fsx/drlfoam/setup-env"], commands=["source /fsx/OpenFOAM/OpenFOAM-v2206/etc/bashrc",
+                             "source /fsx/drlfoam/setup-env"])
         """
         buffer = SlurmBuffer(training_path, env,
                              buffer_size, n_runners, config, timeout=timeout)
@@ -246,7 +244,7 @@ def main(args):
         env_model.start_timer()
         agent.update(states, actions, rewards)
         env_model.time_ppo_update()
-        agent.save_state(join(training_path, f"checkpoint.pt"))
+        agent.save_state(join(training_path, f"checkpoint_{e}.pt"))
         current_policy = agent.trace_policy()
         buffer.update_policy(current_policy)
         current_policy.save(join(training_path, f"policy_trace_{e}.pt"))
@@ -307,7 +305,7 @@ if __name__ == "__main__":
         chdir(BASE_PATH)
 
         # test MB-DRL on local machine
-        d_args = RunTrainingInDebugger(episodes=80, runners=4, buffer=4, finish=5, n_input_time_steps=30, seed=0)
+        d_args = RunTrainingInDebugger(episodes=10, runners=4, buffer=4, finish=5, n_input_time_steps=30, seed=0)
         assert d_args.finish > 4, "finish time needs to be > 4s, (the first 4sec are uncontrolled)"
 
         # run PPO training
