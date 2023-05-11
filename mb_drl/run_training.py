@@ -273,7 +273,7 @@ class RunTrainingInDebugger:
         self.n_input_time_steps = n_input_time_steps
         self.seed = seed
         self.timeout = timeout
-        self.checkpoint = False
+        self.checkpoint = ""
 
     def set_openfoam_bashrc(self, path: str):
         system(f"sed -i '5i # source bashrc for openFOAM for debugging purposes\\n{self.command}' {path}/Allrun.pre")
@@ -317,9 +317,6 @@ if __name__ == "__main__":
         rmtree(d_args.output + "/base")
 
         try:
-            rmtree(d_args.output + "/cd_model")
-            rmtree(d_args.output + "/cl_p_model")
-            rmtree(d_args.output + "/cl_error_model")
-            rmtree(d_args.output + "/cd_error_model")
+            rmtree(d_args.output + "/env_model")
         except FileNotFoundError:
             print("no directories for environment models found.")
