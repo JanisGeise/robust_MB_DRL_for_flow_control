@@ -157,6 +157,11 @@ def execute_prediction_slurm(pred_id: int, no: int, train_path: str = "examples/
     settings = pt.load(join(train_path, "settings_prediction.pt"))
     trajectories = pt.load(join(train_path, "obs_pred_traj.pt"))
 
+    # ensure reproducibility ('no' is chosen in predict_trajectories.py which is called from run_training)
+    pt.manual_seed(no)
+    if pt.cuda.is_available():
+        pt.cuda.manual_seed_all(no)
+
     shape = (settings["len_traj"], len(settings["env_model"]))
     r_model, a_model, s_model = pt.zeros(shape), pt.zeros(shape), pt.zeros((shape[0], settings["n_probes"], shape[1]))
 

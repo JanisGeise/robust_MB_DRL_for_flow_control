@@ -23,7 +23,16 @@ sys.path.insert(0, BASE_PATH)
 
 
 class SetupEnvironmentModel:
-    def __init__(self, n_models: int = 5, n_input_time_steps: int = 30, path: str = ""):
+    def __init__(self, n_models_better_perf: int = 3, n_models: int = 5, n_input_time_steps: int = 30, path: str = ""):
+        """
+        setup class for the environment models
+
+        :param n_models_better_perf: number of models which have to improve the policy in order to not switch to CFD;
+                                     this number is used to determine the threshold for the switching criteria
+        :param n_models: number of models in the ensemble
+        :param n_input_time_steps: number of subsequent time steps used for model input
+        :param path: path to the training directory
+        """
         self.path = path
         self.n_models = n_models
         self.t_input = n_input_time_steps
@@ -31,7 +40,8 @@ class SetupEnvironmentModel:
         self.len_traj = 200
         self.last_cfd = 0
         self.policy_loss = []
-        self.threshold = 0.5
+        # ensure that there are no round-off errors, which lead to switching
+        self.threshold = round(n_models_better_perf / n_models, 3)
         self.start_training = None
         self._start_time = None
         self._time_cfd = []

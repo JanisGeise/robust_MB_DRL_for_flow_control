@@ -67,7 +67,8 @@ if __name__ == "__main__":
 
                 if key != "ppo" and key != "other":
                     t = "{:.2f} min\n".format((times[key] / 100) * times["t_total"] / 60)
-                    t += "$\pm$ {:.2f} min".format((times[f"{key}_std"] / 100) * times["t_total"] / 60)
+                    t += "$\pm$ {:.2f} min\n".format((times[f"{key}_std"] / 100) * times["t_total"] / 60)
+                    t += "({:.2f} %)".format(times[key])
                     ax.bar_label(b, label_type="center", labels=[t])
                 bot += times[key]
     ax.set_ylabel("avg. execution time [\%]", usetex=True, fontsize=13)

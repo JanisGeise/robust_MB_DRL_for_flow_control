@@ -57,7 +57,8 @@ def assess_model_performance(s_model: list, a_model: list, r_model: list, agent:
 
 
 def fill_buffer_from_models(env_model: list, episode: int, path: str, observation: dict, n_input: int, n_probes: int,
-                            buffer_size: int, len_traj: int, agent: PPOAgent, env: str = "local") -> Tuple[list, list]:
+                            buffer_size: int, len_traj: int, agent: PPOAgent, env: str = "local",
+                            seed: int = 0) -> Tuple[list, list]:
     """
     creates trajectories using data from the CFD environment as initial states and the previously trained environment
     models in order to fill the buffer
@@ -74,8 +75,14 @@ def fill_buffer_from_models(env_model: list, episode: int, path: str, observatio
     :param len_traj: length of the trajectory, 1sec CFD = 100 epochs
     :param agent: PPO-agent
     :param env: environment, either 'local' or 'slurm', is set in 'run_training.py'
+    :param seed: seed value, is set in 'run_training.py'
     :return: a list with the length of the buffer size containing the generated trajectories
     """
+    # ensure reproducibility ('no' is chosen in predict_trajectories.py which is called from run_training)
+    pt.manual_seed(seed)
+    if pt.cuda.is_available():
+        pt.cuda.manual_seed_all(seed)
+
     predictions, shape = [], (len_traj, len(env_model))
     r_model_tmp, a_model_tmp, s_model_tmp = pt.zeros(shape), pt.zeros(shape), pt.zeros((shape[0], n_probes, shape[1]))
     r_model, a_model, s_model = [], [], []

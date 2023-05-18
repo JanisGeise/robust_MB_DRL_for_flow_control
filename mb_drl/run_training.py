@@ -190,7 +190,7 @@ def main(args):
                                                                           n_input=env_model.t_input,
                                                                           len_traj=env_model.len_traj,
                                                                           buffer_size=buffer_size, agent=agent,
-                                                                          env=executer)
+                                                                          env=executer, seed=args.seed)
             env_model.time_mb_episode()
             env_model.policy_loss.append(current_policy_loss)
 
