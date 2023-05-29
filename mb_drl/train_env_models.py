@@ -157,7 +157,7 @@ def train_env_models(path: str, env_model: EnvironmentModel, data: list, epochs:
         os.mkdir(path)
 
     # train and validate environment models with CFD data from the previous episode
-    print(f"start training the environment model no. {model_no} for cl & p")
+    print(f"start training environment model no. {model_no}")
 
     # move model to GPU if available
     device = "cuda" if pt.cuda.is_available() else "cpu"

@@ -163,7 +163,8 @@ def main(args):
                 model_ensemble, l, obs = wrapper_train_env_model_ensemble(training_path, env_model.obs_cfd,
                                                                           env_model.len_traj, env.n_states,
                                                                           buffer_size, env_model.n_models,
-                                                                          n_time_steps=env_model.t_input, env=executer)
+                                                                          n_time_steps=env_model.t_input, env=executer,
+                                                                          n_actions=env.n_actions)
 
             # ever CFD episode: models are loaded and re-trained based on CFD data of the current & last CFD episode
             else:
@@ -171,7 +172,8 @@ def main(args):
                                                                           env_model.len_traj, env.n_states,
                                                                           buffer_size, env_model.n_models,
                                                                           load=True, env=executer,
-                                                                          n_time_steps=env_model.t_input)
+                                                                          n_time_steps=env_model.t_input,
+                                                                          n_actions=env.n_actions)
             env_model.time_model_training()
 
             # save train- and validation losses of the environment models

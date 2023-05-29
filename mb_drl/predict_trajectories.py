@@ -3,7 +3,7 @@
     - generating the trajectory
     - checking the trajectory for invalid values
     - assessing the model performance in order to determine if a switching back to CFD is required (switching criteria
-      is implemented in 'env_model_rotating_cylinder_old_routine.py')
+      is implemented in 'env_model_rotating_cylinder.py')
 """
 import os
 import sys
@@ -62,8 +62,6 @@ def fill_buffer_from_models(env_model: list, episode: int, path: str, observatio
     """
     creates trajectories using data from the CFD environment as initial states and the previously trained environment
     models in order to fill the buffer
-
-    TODO: clean up implementation of this fct
 
     :param env_model: list with all trained environment models
     :param episode: the current episode of the training
@@ -155,22 +153,23 @@ def fill_buffer_from_models(env_model: list, episode: int, path: str, observatio
             no = pt.randint(low=0, high=observation["cd"].size()[1], size=(1, 1)).item()
 
             # predict the trajectory (the env. models are loaded in predict trajectory function)
-            pred, ok = predict_trajectories(env_model, episode, path, observation["states"][:, :, no],
-                                            observation["cd"][:, no], observation["cl"][:, no],
-                                            observation["actions"][:, no], observation["alpha"][:, no],
-                                            observation["beta"][:, no], n_probes, n_input, min_max, len_traj)
+            pred, ok = predict_trajectories(env_model, episode, path, observation["states"][:, no, :],
+                                            observation["cd"][:, no, :], observation["cl"][:, no, :],
+                                            observation["actions"][:, no, :], observation["alpha"][:, no, :],
+                                            observation["beta"][:, no, :], n_input, min_max, len_traj)
 
             # only add trajectory to buffer if the values make sense, otherwise discard it
             if ok[0]:
                 predictions.append(pred)
 
                 # compute the uncertainty of the predictions for the rewards wrt the model number
+                # TODO: check if this is still compatible with changes in drlfoam for pinball env.
                 for model in range(len(env_model)):
                     tmp, _ = predict_trajectories(env_model, episode, path,
-                                                  observation["states"][:, :, no], observation["cd"][:, no],
-                                                  observation["cl"][:, no], observation["actions"][:, no],
-                                                  observation["alpha"][:, no], observation["beta"][:, no],
-                                                  n_probes, n_input, min_max, len_traj, model_no=model)
+                                                  observation["states"][:, no, :], observation["cd"][:, no, :],
+                                                  observation["cl"][:, no, :], observation["actions"][:, no, :],
+                                                  observation["alpha"][:, no, :], observation["beta"][:, no, :],
+                                                  n_input, min_max, len_traj, model_no=model)
                     r_model_tmp[:, model] = tmp["rewards"]
                     a_model_tmp[:, model] = tmp["actions"]
                     s_model_tmp[:, :, model] = tmp["states"]
