@@ -19,6 +19,8 @@
           corresponds to a specific training of one seed value
 """
 import re
+from os.path import join
+
 import pandas as pd
 import matplotlib.pyplot as plt
 
@@ -62,27 +64,27 @@ def plot_results_vs_episode(settings: dict, cd_mean: Union[list, pt.Tensor], cd_
                 ax[i].plot(range(len(cl_mean[c])), cl_mean[c], color=settings["color"][c], label=settings["legend"][c])
                 ax[i].fill_between(range(len(cl_mean[c])), cl_mean[c] - cl_std[c], cl_mean[c] + cl_std[c],
                                    color=settings["color"][c], alpha=0.3)
-                ax[i].set_ylabel("$mean$ $lift$ $coefficient$ $\qquad c_l$", usetex=True, fontsize=13)
+                ax[i].set_ylabel("$\\bar{c}_L$", fontsize=13)
 
             elif i == 1:
                 ax[i].plot(range(len(cd_mean[c])), cd_mean[c], color=settings["color"][c])
                 ax[i].fill_between(range(len(cd_mean[c])), cd_mean[c] - cd_std[c], cd_mean[c] + cd_std[c],
                                    color=settings["color"][c], alpha=0.3)
-                ax[i].set_ylabel("$mean$ $drag$ $coefficient$ $\qquad c_d$", usetex=True, fontsize=13)
+                ax[i].set_ylabel("$\\bar{c}_D$", fontsize=13)
 
             elif plot_action:
                 ax[i].plot(range(len(actions_mean[c])), actions_mean[c], color=settings["color"][c])
                 ax[i].fill_between(range(len(actions_mean[c])), actions_mean[c] - actions_std[c],
                                    actions_mean[c] + actions_std[c], color=settings["color"][c], alpha=0.3)
-                ax[i].set_ylabel("$mean$ $action$ $\qquad \omega$", usetex=True, fontsize=13)
+                ax[i].set_ylabel("$\\bar{\omega}$", fontsize=13)
 
-            ax[i].set_xlabel("$episode$ $number$", usetex=True, fontsize=13)
+            ax[i].set_xlabel("$e$", fontsize=13)
 
     fig.tight_layout()
     fig.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=n_cases)
     fig.subplots_adjust(wspace=0.25, top=0.93)
-    plt.savefig("".join([settings["main_load_path"], setup["path_controlled"], "/plots/coefficients_vs_episode.png"]),
-                dpi=600)
+    plt.savefig(join(settings["main_load_path"], setup["path_controlled"], "plots", "coefficients_vs_episode.png"),
+                dpi=340)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")
@@ -105,11 +107,14 @@ def plot_rewards_vs_episode(settings: dict, reward_mean: Union[list, pt.Tensor],
         ax.fill_between(range(len(reward_mean[c])), reward_mean[c] - reward_std[c], reward_mean[c] + reward_std[c],
                         color=settings["color"][c], alpha=0.3)
 
-    ax.set_ylabel("$mean$ $reward$", usetex=True, fontsize=13)
-    ax.set_xlabel("$episode$ $number$", usetex=True, fontsize=13)
-    ax.legend(loc="lower right", framealpha=1.0, fontsize=10, ncol=2)
-    plt.savefig("".join([settings["main_load_path"], setup["path_controlled"], "/plots/rewards_vs_episode.png"]),
-                dpi=600)
+    ax.set_ylabel("$\\bar{r}$")
+    ax.set_xlabel("$e$")
+    # ax.set_xlim(0, 200)
+    fig.tight_layout()
+    ax.legend(loc="lower right", framealpha=1.0, ncol=1)
+    fig.subplots_adjust(wspace=0.2)
+    plt.savefig(join(settings["main_load_path"], setup["path_controlled"], "plots", "rewards_vs_episode.png"),
+                dpi=340)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")
@@ -131,9 +136,10 @@ def plot_cl_cd_alpha_beta(settings: dict, controlled_cases: Union[list, pt.Tenso
     if plot_coeffs:
         keys = ["t", "cl", "cd"]
         save_name = "comparison_cl_cd"
-        ax[1].set_ylim(2.95, 3.25)
+        ax[1].set_ylim(2.95, 3.25)  # Re = 100
+        # ax[1].set_ylim(2, 3.75)          # Re = 500
         n_cases = range(len(settings["case_name"]) + 1)
-        ylabels = ["$lift$ $coefficient$ $\qquad c_l$", "$drag$ $coefficient$ $\qquad c_d$"]
+        ylabels = ["$c_L$", "$c_D$"]
     else:
         keys = ["t", "alpha", "beta"]
         save_name = "comparison_alpha_beta"
@@ -144,26 +150,26 @@ def plot_cl_cd_alpha_beta(settings: dict, controlled_cases: Union[list, pt.Tenso
         for i in range(2):
             if i == 0:
                 if c == 0:
-                    ax[i].plot(uncontrolled_case[keys[0]], uncontrolled_case[keys[1]], color="black",
+                    ax[i].plot(uncontrolled_case[keys[0]] * 10, uncontrolled_case[keys[1]], color="black",
                                label="uncontrolled")
                 else:
                     ax[i].plot(controlled_cases[c - 1][keys[0]], controlled_cases[c - 1][keys[1]],
                                color=settings["color"][c - 1], label=settings["legend"][c - 1])
-                ax[i].set_ylabel(ylabels[0], usetex=True, fontsize=13)
+                ax[i].set_ylabel(ylabels[0], fontsize=13)
             else:
                 if c == 0:
                     ax[i].plot(uncontrolled_case[keys[0]], uncontrolled_case[keys[2]], color="black")
                 else:
                     ax[i].plot(controlled_cases[c - 1][keys[0]], controlled_cases[c - 1][keys[2]],
                                color=settings["color"][c - 1])
-                ax[i].set_ylabel(ylabels[1], usetex=True, fontsize=13)
+                ax[i].set_ylabel(ylabels[1], fontsize=13)
 
-            ax[i].set_xlabel("$time$ $[s]$", usetex=True, fontsize=13)
-    fig.suptitle("", usetex=True, fontsize=14)
-    fig.tight_layout(pad=1.5)
-    fig.legend(loc="upper right", framealpha=1.0, fontsize=11, ncol=len(settings["case_name"]) + 1)
-    fig.subplots_adjust(wspace=0.2)
-    plt.savefig("".join([settings["main_load_path"], settings["path_controlled"], f"/plots/{save_name}.png"]), dpi=600)
+            ax[1].set_xlabel("$t^*$", fontsize=14)
+            ax[i].set_xlim(0, 200)
+    fig.tight_layout()
+    fig.legend(loc="upper center", framealpha=1.0, fontsize=10, ncol=2)
+    fig.subplots_adjust(wspace=0.2, top=0.84)
+    plt.savefig(join(settings["main_load_path"], settings["path_controlled"], "plots", f"{save_name}.png"), dpi=340)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")
@@ -182,13 +188,13 @@ def plot_omega(settings: dict, controlled_cases: Union[list, pt.Tensor]) -> None
         ax.plot(controlled_cases[c]["t"], controlled_cases[c]["omega"], color=settings["color"][c],
                 label=settings["legend"][c])
 
-    ax.set_ylabel("$action$ $\omega$", usetex=True, fontsize=13)
-    ax.set_xlabel("$time$ $[s]$", usetex=True, fontsize=13)
+    ax.set_ylabel("$\omega$", fontsize=13)
+    ax.set_xlabel("$t^*$", fontsize=13)
     fig.tight_layout()
     fig.subplots_adjust(top=0.91)
-    plt.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=1)
-    plt.savefig("".join([settings["main_load_path"], settings["path_controlled"], f"/plots/omega_controlled_case.png"]),
-                dpi=600)
+    plt.legend(loc="upper right", framealpha=1.0, ncol=1)
+    plt.savefig(join(settings["main_load_path"], settings["path_controlled"], "plots", "omega_controlled_case.png"),
+                dpi=340)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")
@@ -207,11 +213,11 @@ def plot_variance_of_beta_dist(settings: dict, var_beta_dist: Union[list, pt.Ten
     for c in range(n_cases):
         ax.plot(range(len(var_beta_dist[c])), var_beta_dist[c], color=settings["color"][c], label=settings["legend"][c])
 
-    ax.set_ylabel("$mean$ $variance$ $of$ $beta-distribution$", usetex=True, fontsize=13)
-    ax.set_xlabel("$episode$ $number$", usetex=True, fontsize=13)
+    ax.set_ylabel("$mean$ $variance$ $of$ $beta-distribution$", fontsize=13)
+    ax.set_xlabel("$e$", fontsize=13)
     ax.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=2)
-    plt.savefig("".join([settings["main_load_path"], setup["path_controlled"], "/plots/var_beta_distribution.png"]),
-                dpi=600)
+    plt.savefig(join(settings["main_load_path"], setup["path_controlled"], "plots", "var_beta_distribution.png"),
+                dpi=340)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")
@@ -407,21 +413,74 @@ def plot_cl_cd_trajectories(settings: dict, data: List[dict], number: int, e: in
                     # 2nd episode is always MB (if MB-DRL was used)
                     ax[i].plot(epochs, data[n]["cl"][e, :, number], color=settings["color"][n],
                                label=f"{settings['legend'][n]}, episode {e + 1}")
-                    ax[i].set_ylabel("$lift$ $coefficient$ $\qquad c_l$", usetex=True, fontsize=13)
+                    ax[i].set_ylabel("$c_L$", fontsize=13)
                 elif i == 1:
                     ax[i].plot(epochs, data[n]["cd"][e, :, number], color=settings["color"][n])
-                    ax[i].set_ylabel("$drag$ $coefficient$ $\qquad c_d$", usetex=True, fontsize=13)
+                    ax[i].set_ylabel("$c_D$", fontsize=13)
                 else:
                     ax[i].plot(epochs, data[n]["actions"][e, :, number], color=settings["color"][n])
-                    ax[i].set_ylabel("$action$ $\qquad \omega$", usetex=True, fontsize=13)
-                ax[i].set_xlabel("$epoch$ $number$", usetex=True, fontsize=13)
+                    ax[i].set_ylabel("$omega$", fontsize=13)
+                ax[i].set_xlabel("$t^*$", fontsize=13)
             except IndexError:
                 print("omit plotting trajectories of failed cases")
     fig.tight_layout()
     fig.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=2)
     fig.subplots_adjust(wspace=0.25, top=0.90)
-    plt.savefig("".join([settings["main_load_path"], settings["path_controlled"],
-                         f"/plots/comparison_traj_cl_cd_{e}.png"]), dpi=600)
+    plt.savefig(join(settings["main_load_path"], settings["path_controlled"], "plots",
+                     f"comparison_traj_cl_cd_{e}.png"), dpi=340)
+    plt.show(block=False)
+    plt.pause(2)
+    plt.close("all")
+
+
+def plot_mean_std_trajectories(settings: dict, data: list) -> None:
+    """
+    plots the trajectory of cl and cd for different episodes of the training, meant to use for either comparing MF-
+    trajectories to trajectories generated by the environment models or comparing trajectories from environment models
+    run with different settings to each other
+
+    :param settings: setup containing all the paths etc.
+    :param data: trajectory data to plot
+    :return: None
+    """
+    # fig, ax = plt.subplots(nrows=2, ncols=4, figsize=(15, 8), sharey="row", sharex="col")
+    fig, ax = plt.subplots(nrows=4, ncols=2, figsize=(7, 8), sharey="col", sharex="all")
+    epochs = pt.tensor(list(range(len(data[0]["cl"][1, :, 0])))) / 10       # TODO: only for Re = 100
+    e = [24, 74, 124, 199]
+    for n in range(len(data)):
+        for k in range(4):          # k = rows
+            for i in range(2):      # i = cols
+                if i == 0:
+                    mean_tmp = pt.mean(data[n]["cd"][e[k], :, :], dim=1)
+                    std_tmp = pt.std(data[n]["cd"][e[k], :, :], dim=1)
+                    if k == 0:
+                        # 2nd episode is always MB (if MB-DRL was used)
+                        ax[k][i].plot(epochs, mean_tmp, color=settings["color"][n], label=settings['legend'][n])
+                        ax[k][i].fill_between(epochs, mean_tmp - std_tmp, mean_tmp + std_tmp, color=settings["color"][n],
+                                              alpha=0.3)
+                    else:
+                        ax[k][i].plot(epochs, mean_tmp, color=settings["color"][n])
+                        ax[k][i].fill_between(epochs, mean_tmp - std_tmp, mean_tmp + std_tmp, color=settings["color"][n],
+                                              alpha=0.3)
+
+                    ax[k][i].set_ylabel("$\\bar{c}_D$")
+                else:
+                    mean_tmp = pt.mean(data[n]["cl"][e[k], :, :], dim=1)
+                    std_tmp = pt.std(data[n]["cl"][e[k], :, :], dim=1)
+                    ax[k][i].plot(epochs, mean_tmp, color=settings["color"][n])
+                    ax[k][i].fill_between(epochs, mean_tmp - std_tmp, mean_tmp + std_tmp, color=settings["color"][n],
+                                          alpha=0.3)
+                    if i == 1:
+                        ax[k][i].set_ylabel("$\\bar{c}_L$")
+
+                ax[k][i].set_xlim(0, 40)
+    ax[-1][0].set_xlabel("$t^*$")
+    ax[-1][1].set_xlabel("$t^*$")
+    fig.tight_layout()
+    fig.legend(loc="upper center", framealpha=1.0, ncol=2)
+    fig.subplots_adjust(wspace=0.3, top=0.88)
+    plt.savefig(join(settings["main_load_path"], settings["path_controlled"], "plots",
+                     "comparison_traj_cd_mean_std.png"), dpi=340)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")
@@ -465,8 +524,11 @@ if __name__ == "__main__":
             setup["legend"] = [f"seed = {c}" for c in range(len(averaged_data["len_traj"]))]
 
     # print info amount CFD episodes, assuming 1st case is MF
-    for i in range(1, len(averaged_data["MF_episodes"])):
+    for i in range(len(averaged_data["MF_episodes"])):
         print(f"{averaged_data['MF_episodes'][i]} CFD episodes for case {i}")
+
+    # plots for avg. the trajectories for cl & cd and plot then vs. t
+    plot_mean_std_trajectories(setup, all_data)
 
     # plot variance of the beta-distribution wrt episodes
     plot_variance_of_beta_dist(setup, averaged_data["var_beta_fct"], n_cases=len(setup["case_name"]))
@@ -509,28 +571,30 @@ if __name__ == "__main__":
         plot_numerical_setup(setup)
 
         # import the trajectory of the uncontrolled case
-        uncontrolled = pd.read_csv("".join([setup["main_load_path"], setup["path_uncontrolled"],
-                                           r"postProcessing/forces/0/coefficient.dat"]), skiprows=13, header=0,
+        uncontrolled = pd.read_csv(join(setup["main_load_path"], setup["path_uncontrolled"], "postProcessing", "forces",
+                                        "0", "coefficient.dat"), skiprows=13, header=0,
                                    sep=r"\s+", usecols=[0, 1, 2], names=["t", "cd", "cl"])
         p_uncontrolled = pd.read_csv("".join([setup["main_load_path"], setup["path_uncontrolled"],
-                                              setup["path_to_probes"]]), skiprows=setup["n_probes"]+1, header=0,
+                                              setup["path_to_probes"]]), skiprows=setup["n_probes"] + 1, header=0,
                                      names=["t"] + [f"probe_{i}" for i in range(setup["n_probes"])], sep=r"\s+")
 
         controlled, p_controlled, traj = [], [], []
         for case in range(len(setup["case_name"])):
             # import the trajectories of the controlled cases
-            controlled.append(pd.read_csv("".join([setup["main_load_path"], setup["path_controlled"],
-                                                   setup["case_name"][case], setup["path_final_results"],
-                                                   r"postProcessing/forces/0/coefficient.dat"]), skiprows=13, header=0,
+            controlled.append(pd.read_csv(join(setup["main_load_path"], setup["path_controlled"],
+                                               setup["case_name"][case], setup["path_final_results"], "postProcessing",
+                                               "forces", "0", "coefficient.dat"), skiprows=13, header=0,
                                           sep=r"\s+", usecols=[0, 1, 2], names=["t", "cd", "cl"]))
-            traj.append(pd.read_csv("".join([setup["main_load_path"], setup["path_controlled"],
-                                             setup["case_name"][case], setup["path_final_results"],
-                                             r"/trajectory.csv"]), header=0, sep=r",", usecols=[0, 1, 2, 3],
-                                    names=["t", "omega", "alpha", "beta"]))
-            p_controlled.append(pd.read_csv("".join([setup["main_load_path"], setup["path_controlled"],
-                                                     setup["case_name"][case], setup["path_final_results"],
-                                                     setup["path_to_probes"]]), skiprows=setup["n_probes"]+1, header=0,
-                                            names=["t"] + [f"probe_{i}" for i in range(setup["n_probes"])], sep=r"\s+"))
+
+            traj.append(pd.read_csv(join(setup["main_load_path"], setup["path_controlled"], setup["case_name"][case],
+                                         setup["path_final_results"], "trajectory.csv"), header=0, sep=r",",
+                                    usecols=[0, 1, 2, 3], names=["t", "omega", "alpha", "beta"]))
+
+            p_controlled.append(pd.read_csv(join(setup["main_load_path"], setup["path_controlled"],
+                                                 setup["case_name"][case], setup["path_final_results"],
+                                                 setup["path_to_probes"]), skiprows=setup["n_probes"] + 1,
+                                            header=0, names=["t"] + [f"probe_{i}" for i in range(setup["n_probes"])],
+                                            sep=r"\s+"))
 
         # plot cl and cd of the controlled cases vs. the uncontrolled cylinder flow
         plot_cl_cd_alpha_beta(setup, controlled, uncontrolled, plot_coeffs=True)

@@ -9,12 +9,10 @@
     prerequisites:
         - None
 """
-import pickle
 import torch as pt
 
 from glob import glob
-from natsort import natsorted
-from typing import List
+from os.path import join
 
 
 def load_trajectory_data(path: str) -> dict:
@@ -25,14 +23,8 @@ def load_trajectory_data(path: str) -> dict:
     :return: dict with actions, states, cl, cd. Each parameter contains one tensor with the length of N_episodes, each
              entry has all the trajectories sampled in this episode (cols = N_trajectories, rows = length_trajectories)
     """
-    # sort imported data wrt to episode number
-    files = natsorted(glob(path + "observations_*.pkl"))
-    observations = [pickle.load(open(file, "rb")) for file in files]
-
-    # in new version of drlfoam: observations are in stored in '.pt' files, not '.pkl'
-    if not observations:
-        files = natsorted(glob(path + "observations_*.pt"))
-        observations = [pt.load(open(file, "rb")) for file in files]
+    files = sorted(glob(path + "observations_*.pt"), key=lambda x: int(x.split("_")[-1].split(".")[0]))
+    observations = [pt.load(open(file, "rb")) for file in files]
     traj_length, counter, mb_episodes = len(observations[0][0]["actions"]), 0, 0
 
     # sort the trajectories from all workers wrt the episode
@@ -89,20 +81,16 @@ def load_trajectory_data(path: str) -> dict:
     else:
         print("found no invalid trajectories")
 
-    # load value-, policy and MSE losses of PPO training if the training didn't crash
-    if len(glob(path + "training_history.pkl")) > 0:
-        data["network_data"] = pickle.load(open(path + "training_history.pkl", "rb"))
-    else:
-        data["network_data"] = []
-
     # add ratio (MB / MF) episodes = MB_episodes / (all_episodes - MB_episodes)
     data["MB_MF"] = mb_episodes / (len(observations) - mb_episodes)
     data["MF_episodes"] = len(observations) - mb_episodes
 
+    """ maybe not working due to changes in implementation of MB-training
+    
     # import and sort training- and validation losses of the environment models, if MB-DRL was used
-    if len(glob(path + "env_model_loss_*.pkl")) > 0:
-        files = natsorted(glob(path + "env_model_loss_*.pkl"))
-        losses = [pickle.load(open(file, "rb")) for file in files]
+    if len(glob(path + "env_model_loss_*.pt")) > 0:
+        files = natsorted(glob(path + "env_model_loss_*.pt"))
+        losses = [pt.load(open(file, "rb")) for file in files]
 
         shape = (len(losses), losses[0]["val_loss_cd"].size()[0], losses[0]["val_loss_cd"].size()[-1])
         cd_train_loss, cd_val_loss = pt.zeros(shape), pt.zeros(shape)
@@ -119,11 +107,11 @@ def load_trajectory_data(path: str) -> dict:
         shape = (cd_train_loss.size()[0] * cd_train_loss.size()[1], cd_train_loss.size()[-1])
         data["train_loss_cd"], data["val_loss_cd"] = cd_train_loss.reshape(shape), cd_val_loss.reshape(shape)
         data["train_loss_cl_p"], data["val_loss_cl_p"] = cl_p_train_loss.reshape(shape), cl_p_val_loss.reshape(shape)
-
+    """
     return data
 
 
-def load_all_data(settings: dict) -> List[dict]:
+def load_all_data(settings: dict) -> list:
     """
     wrapper function for loading the results of the PPO-training and sorting it wrt episodes
 
@@ -139,8 +127,8 @@ def load_all_data(settings: dict) -> List[dict]:
 
             # assuming each case directory contains subdirectories with training data ran with different seeds,
             # exclude directories named "plots", readme files, logs etc.
-            dirs = [d for d in glob("".join([settings["main_load_path"], settings["path_controlled"],
-                                             settings["case_name"][c], "/seed[0-9]"]))]
+            dirs = [d for d in glob(join(settings["main_load_path"], settings["path_controlled"],
+                                         settings["case_name"][c], "seed[0-9]"))]
 
             for d in dirs:
                 case_data.append(load_trajectory_data(d + "/"))
@@ -150,8 +138,8 @@ def load_all_data(settings: dict) -> List[dict]:
 
     else:
         for c in range(len(settings["case_name"])):
-            loaded_data.append(load_trajectory_data(settings["main_load_path"] + settings["path_controlled"] +
-                                                    settings["case_name"][c]))
+            loaded_data.append(load_trajectory_data(join(settings["main_load_path"], settings["path_controlled"],
+                                                    settings["case_name"][c])))
     return loaded_data
 
 
@@ -168,7 +156,7 @@ def average_results_for_each_case(data: list) -> dict:
                 "mean_rewards": [], "std_rewards": [], "mean_alpha": [], "std_alpha": [], "mean_beta": [],
                 "std_beta": [], "tot_mean_rewards": [], "tot_std_rewards": [], "tot_mean_cd": [], "tot_std_cd": [],
                 "tot_mean_cl": [], "tot_std_cl": [], "var_beta_fct": [], "buffer_size": [], "len_traj": [],
-                "ratio_MB_MF": [], "MF_episodes": []}
+                "ratio_MB_MF": [], "MF_episodes": [], "std_beta_fct": []}
     names, keys, losses = {}, ["cl", "cd", "actions", "rewards", "alpha", "beta"], []
 
     for case in range(len(data)):
@@ -237,10 +225,9 @@ def merge_results_for_diff_seeds(data: list, n_seeds: int) -> dict:
     shape = (data[0]["cd"].size(0), data[0]["cd"].size(1), n_traj)
     states = pt.zeros((data[0]["states"].size(0), data[0]["states"].size(1), data[0]["states"].size(2), n_traj))
 
-    merged_data = {"n_workers": n_traj, "network_data": [data[seed]["network_data"] for seed in range(len(data))],
-                   "n_seeds": n_seeds, "cl": pt.zeros(shape), "cd": pt.zeros(shape), "actions": pt.zeros(shape),
-                   "rewards": pt.zeros(shape), "alpha": pt.zeros(shape), "beta": pt.zeros(shape), "ratio_MB_MF": [],
-                   "MF_episodes": []}
+    merged_data = {"n_workers": n_traj, "n_seeds": n_seeds, "cl": pt.zeros(shape), "cd": pt.zeros(shape),
+                   "actions": pt.zeros(shape), "rewards": pt.zeros(shape), "alpha": pt.zeros(shape),
+                   "beta": pt.zeros(shape), "ratio_MB_MF": [], "MF_episodes": []}
     keys = ["cl", "cd", "actions", "rewards", "alpha", "beta"]
 
     for seed in range(n_seeds):
