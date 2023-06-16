@@ -23,7 +23,7 @@ def load_trajectory_data(path: str) -> dict:
     :return: dict with actions, states, cl, cd. Each parameter contains one tensor with the length of N_episodes, each
              entry has all the trajectories sampled in this episode (cols = N_trajectories, rows = length_trajectories)
     """
-    files = sorted(glob(path + "observations_*.pt"), key=lambda x: int(x.split("_")[-1].split(".")[0]))
+    files = sorted(glob(join(path, "observations_*.pt")), key=lambda x: int(x.split("_")[-1].split(".")[0]))
     observations = [pt.load(open(file, "rb")) for file in files]
     traj_length, counter, mb_episodes = len(observations[0][0]["actions"]), 0, 0
 
@@ -34,25 +34,25 @@ def load_trajectory_data(path: str) -> dict:
             "states": pt.zeros((shape[0], shape[1], observations[0][0]["states"].size()[1], shape[2])),
             "no_e_mb": []}
 
-    # tmp dict for merging the data from all runners within each new episode
-    shape = (traj_length, data["n_workers"])
-    tmp = {"states": pt.zeros((shape[0], observations[0][0]["states"].size()[1], shape[1])), "cl": pt.zeros(shape),
-           "cd": pt.zeros(shape), "actions": pt.zeros(shape), "rewards": pt.zeros(shape), "alpha": pt.zeros(shape),
-           "beta": pt.zeros(shape)}
-
     for episode in range(len(observations)):
+        # tmp dict for merging the data from all runners within each new episode
+        shape = (traj_length, data["n_workers"])
+        tmp = {"states": pt.zeros((shape[0], observations[0][0]["states"].size()[1], shape[1])), "cl": pt.zeros(shape),
+               "cd": pt.zeros(shape), "actions": pt.zeros(shape), "rewards": pt.zeros(shape), "alpha": pt.zeros(shape),
+               "beta": pt.zeros(shape)}
+
         for worker in range(len(observations[episode])):
             # in case a trajectory has no values in it, drlfoam returns emtpy dict
             if not bool(observations[episode][worker]):
                 counter += 1
                 continue
             # omit failed trajectories in case the trajectory only converged partly
-            elif observations[episode][worker]["actions"].size()[0] < traj_length:
+            elif observations[episode][worker]["rewards"].size()[0] < traj_length:
                 counter += 1
                 # print(observations[episode][worker]["actions"].size()[0])
                 continue
             # in case there exist more points in one trajectory, just take the first len_traj ones (happens sometimes)
-            elif observations[episode][worker]["actions"].size()[0] > traj_length:
+            elif observations[episode][worker]["rewards"].size()[0] > traj_length:
                 # merge data from all runners for each episode
                 for key in tmp:
                     if key == "states":
@@ -129,13 +129,13 @@ def load_all_data(settings: dict) -> list:
         for c in range(len(settings["case_name"])):
             case_data = []
 
-            # assuming each case directory contains subdirectories with training data ran with different seeds,
-            # exclude directories named "plots", readme files, logs etc.
-            dirs = [d for d in glob(join(settings["main_load_path"], settings["path_controlled"],
-                                         settings["case_name"][c], "seed[0-9]"))]
+            # assuming each case directory contains subdirectories with training data named seed*
+            # sorted is just to make debugging easier
+            dirs = sorted([d for d in glob(join(settings["main_load_path"], settings["path_controlled"],
+                                           settings["case_name"][c], "seed[0-9]"))])
 
             for d in dirs:
-                case_data.append(load_trajectory_data(d + "/"))
+                case_data.append(load_trajectory_data(d))
 
             # merge training results from same case, but different seeds episode-wise
             loaded_data.append(merge_results_for_diff_seeds(case_data, n_seeds=len(case_data)))
@@ -167,15 +167,22 @@ def average_results_for_each_case(data: list) -> dict:
         n_episodes, len_trajectory = data[case]["actions"].size()[0], data[case]["actions"].size()[1]
 
         for key in keys:
-            # reshape data and compute mean wrt to episode
-            names[key] = data[case][key].reshape((n_episodes, len_trajectory * data[case]["n_workers"]))
+            # filter out the failed trajectories -> structure: [episodes, len_traj, N_traj], we want to check each
+            # episode, if the complete trajectory of each runner is zero, and then remove all zero trajectories
+            ok = data[case][key].abs().sum(dim=1).bool().all(dim=0)
+            shape = (n_episodes, len_trajectory * sum(ok).item())
+
+            # reshape data and compute mean wrt to episode -> rewards are always scalar, so use them to ignore failed
+            # trajectories
+            names[key] = data[case][key][:, :, ok].reshape(shape)
+
             avg_data[f"mean_" + key].append(pt.mean(names[key], dim=1))
             avg_data[f"std_" + key].append(pt.std(names[key], dim=1))
 
-            # total mean of rewards, cl and cd of complete training for each case
+            # compute the total mean of rewards, cl and cd of complete training for each case
             if key != "alpha" and key != "beta" and key != "actions":
-                avg_data[f"tot_mean_" + key].append(pt.mean(data[case][key]))
-                avg_data[f"tot_std_" + key].append(pt.std(data[case][key]))
+                avg_data[f"tot_mean_" + key].append(pt.mean(names[key]))
+                avg_data[f"tot_std_" + key].append(pt.std(names[key]))
 
         # compute variance of the (mean) beta-distribution of each episode
         # var = (alpha*beta) / ((alpha + beta)^2 * (alpha+beta+1))
