@@ -1,33 +1,72 @@
 """ Example training script.
 """
 import sys
+from time import time
+import logging
 import argparse
 
 from torch import manual_seed, cuda
 from shutil import copytree, rmtree
 from os import makedirs, environ, system
+from os.path import join, exists
 
 BASE_PATH = environ.get("DRL_BASE", "")
 sys.path.insert(0, BASE_PATH)
 
+from drlfoam.environment import RotatingCylinder2D, RotatingPinball2D
 from drlfoam.agent import PPOAgent
-from drlfoam.environment import RotatingCylinder2D
 from drlfoam.execution import LocalBuffer, SlurmBuffer, SlurmConfig
 
-from examples.get_number_of_probes import get_number_of_probes
 from drlfoam.environment.env_model_rotating_cylinder import *
 from drlfoam.environment.predict_trajectories import fill_buffer_from_models
+
+
+logging.basicConfig(level=logging.INFO)
+
+
+SIMULATION_ENVIRONMENTS = {
+    "rotatingCylinder2D" : RotatingCylinder2D,
+    "rotatingPinball2D" : RotatingPinball2D
+}
+
+DEFAULT_CONFIG = {
+    "rotatingCylinder2D" : {
+        "policy_dict" : {
+            "n_layers": 2,
+            "n_neurons": 64,
+            "activation": pt.nn.functional.relu
+        },
+        "value_dict" : {
+            "n_layers": 2,
+            "n_neurons": 64,
+            "activation": pt.nn.functional.relu
+        }
+    },
+    "rotatingPinball2D" : {
+        "policy_dict" : {
+            "n_layers": 2,
+            "n_neurons": 512,
+            "activation": pt.nn.functional.relu
+        },
+        "value_dict" : {
+            "n_layers": 2,
+            "n_neurons": 512,
+            "activation": pt.nn.functional.relu
+        },
+        "policy_lr" : 4.0e-4,
+        "value_lr" : 4.0e-4
+    }
+}
 
 
 def print_statistics(actions, rewards):
     rt = [r.mean().item() for r in rewards]
     at_mean = [a.mean().item() for a in actions]
     at_std = [a.std().item() for a in actions]
-    print("Reward mean/min/max: ", sum(rt)/len(rt), min(rt), max(rt))
-    print("Mean action mean/min/max: ", sum(at_mean) /
-          len(at_mean), min(at_mean), max(at_mean))
-    print("Std. action mean/min/max: ", sum(at_std) /
-          len(at_std), min(at_std), max(at_std))
+    reward_msg = f"Reward mean/min/max: {sum(rt)/len(rt):2.4f}/{min(rt):2.4f}/{max(rt):2.4f}"
+    action_mean_msg = f"Mean action mean/min/max: {sum(at_mean)/len(at_mean):2.4f}/{min(at_mean):2.4f}/{max(at_mean):2.4f}"
+    action_std_msg = f"Std. action mean/min/max: {sum(at_std)/len(at_std):2.4f}/{min(at_std):2.4f}/{max(at_std):2.4f}"
+    logging.info("\n".join((reward_msg, action_mean_msg, action_std_msg)))
 
 
 def parseArguments():
@@ -46,10 +85,12 @@ def parseArguments():
                     help="End time of the simulations.")
     ag.add_argument("-t", "--timeout", required=False, default=1e15, type=int,
                     help="Maximum allowed runtime of a single simulation in seconds.")
-    ag.add_argument("-s", "--seed", required=False, default=0, type=int,
+    ag.add_argument("-m", "--manualSeed", required=False, default=0, type=int,
                     help="seed value for torch")
     ag.add_argument("-c", "--checkpoint", required=False, default="", type=str,
                     help="Load training state from checkpoint file.")
+    ag.add_argument("-s", "--simulation", required=False, default="rotatingCylinder2D", type=str,
+                    help="Select the simulation environment.")
     args = ag.parse_args()
     return args
 
@@ -64,6 +105,7 @@ def main(args):
     executer = args.environment
     timeout = args.timeout
     checkpoint_file = args.checkpoint
+    simulation = args.simulation
 
     # ensure reproducibility
     manual_seed(args.seed)
@@ -73,13 +115,16 @@ def main(args):
     # create a directory for training
     makedirs(training_path, exist_ok=True)
 
-    # get number of probes defined in the control dict and init env. correctly
-    n_probes = get_number_of_probes(getcwd())
-
     # make a copy of the base environment
-    copytree(join(BASE_PATH, "openfoam", "test_cases", "rotatingCylinder2D"),
-             join(training_path, "base"), dirs_exist_ok=True)
-    env = RotatingCylinder2D(n_probes=n_probes)
+    if not simulation in SIMULATION_ENVIRONMENTS.keys():
+        msg = (f"Unknown simulation environment {simulation}" +
+              "Available options are:\n\n" +
+              "\n".join(SIMULATION_ENVIRONMENTS.keys()) + "\n")
+        raise ValueError(msg)
+    if not exists(join(training_path, "base")):
+        copytree(join(BASE_PATH, "openfoam", "test_cases", simulation),
+                join(training_path, "base"), dirs_exist_ok=True)
+    env = SIMULATION_ENVIRONMENTS[simulation]()
     env.path = join(training_path, "base")
 
     # if debug active -> add execution of bashrc to Allrun scripts, because otherwise the path to openFOAM is not set
@@ -95,8 +140,9 @@ def main(args):
     elif executer == "slurm":
         # Typical Slurm configs for TU Braunschweig cluster
         config = SlurmConfig(
-            n_tasks=2, n_nodes=1, partition="standard", time="00:30:00",
-            modules=["singularity/latest", "mpi/openmpi/4.1.1/gcc"]
+            n_tasks=env.mpi_ranks, n_nodes=1, partition="queue-1", time="03:00:00",
+            constraint="c5a.24xlarge", modules=["openmpi/4.1.5"],
+            commands_pre=["source /fsx/OpenFOAM/OpenFOAM-v2206/etc/bashrc", "source /fsx/drlfoam_main/setup-env"]
         )
         """
         # for AWS
@@ -112,12 +158,12 @@ def main(args):
             f"Unknown executer {executer}; available options are 'local' and 'slurm'.")
 
     # create PPO agent
-    agent = PPOAgent(env.n_states, env.n_actions, -
-                     env.action_bounds, env.action_bounds)
+    agent = PPOAgent(env.n_states, env.n_actions, -env.action_bounds, env.action_bounds,
+                     **DEFAULT_CONFIG[simulation])
 
     # load checkpoint if provided
     if checkpoint_file:
-        print(f"Loading checkpoint from file {checkpoint_file}")
+        logging.info(f"Loading checkpoint from file {checkpoint_file}")
         agent.load_state(join(training_path, checkpoint_file))
         starting_episode = agent.history["episode"][-1] + 1
         buffer._n_fills = starting_episode
@@ -133,7 +179,7 @@ def main(args):
     # begin training
     env_model.start_training = time()
     for e in range(starting_episode, episodes):
-        print(f"Start of episode {e}")
+        logging.info(f"Start of episode {e}")
 
         # if only 1 model is used, switch every 4th episode to CFD, else determine switching based on model performance
         if env_model.n_models == 1:
@@ -250,7 +296,8 @@ def main(args):
         current_policy = agent.trace_policy()
         buffer.update_policy(current_policy)
         current_policy.save(join(training_path, f"policy_trace_{e}.pt"))
-        buffer.reset()
+        if not e == episodes - 1:
+            buffer.reset()
     env_model.print_info()
     print(f"Training time (s): {time() - env_model.start_training}")
 
@@ -276,6 +323,7 @@ class RunTrainingInDebugger:
         self.seed = seed
         self.timeout = timeout
         self.checkpoint = ""
+        self.simulation = "rotatingCylinder2D"
 
     def set_openfoam_bashrc(self, path: str):
         system(f"sed -i '5i # source bashrc for openFOAM for debugging purposes\\n{self.command}' {path}/Allrun.pre")
