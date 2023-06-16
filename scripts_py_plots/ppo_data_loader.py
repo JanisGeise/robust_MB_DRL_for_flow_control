@@ -31,7 +31,8 @@ def load_trajectory_data(path: str) -> dict:
     shape = (len(observations), traj_length, len(observations[0]))
     data = {"n_workers": len(observations[0]), "cl": pt.zeros(shape), "cd": pt.zeros(shape), "actions": pt.zeros(shape),
             "rewards": pt.zeros(shape), "alpha": pt.zeros(shape), "beta": pt.zeros(shape),
-            "states": pt.zeros((shape[0], shape[1], observations[0][0]["states"].size()[1], shape[2]))}
+            "states": pt.zeros((shape[0], shape[1], observations[0][0]["states"].size()[1], shape[2])),
+            "no_e_mb": []}
 
     # tmp dict for merging the data from all runners within each new episode
     shape = (traj_length, data["n_workers"])
@@ -70,6 +71,9 @@ def load_trajectory_data(path: str) -> dict:
         if "generated_by" in observations[episode][0]:
             if observations[episode][0]["generated_by"] == "env_models":
                 mb_episodes += 1
+
+                # save the number of the CFD episodes
+                data["no_e_mb"].append(episode)
 
         # sort in the data wrt to episode
         for key in tmp:
@@ -156,7 +160,7 @@ def average_results_for_each_case(data: list) -> dict:
                 "mean_rewards": [], "std_rewards": [], "mean_alpha": [], "std_alpha": [], "mean_beta": [],
                 "std_beta": [], "tot_mean_rewards": [], "tot_std_rewards": [], "tot_mean_cd": [], "tot_std_cd": [],
                 "tot_mean_cl": [], "tot_std_cl": [], "var_beta_fct": [], "buffer_size": [], "len_traj": [],
-                "ratio_MB_MF": [], "MF_episodes": [], "std_beta_fct": []}
+                "ratio_MB_MF": [], "MF_episodes": [], "std_beta_fct": [], "e_number_mb": []}
     names, keys, losses = {}, ["cl", "cd", "actions", "rewards", "alpha", "beta"], []
 
     for case in range(len(data)):
@@ -178,7 +182,11 @@ def average_results_for_each_case(data: list) -> dict:
         var = (avg_data["mean_alpha"][case] * avg_data["mean_beta"][case]) / \
               ((avg_data["mean_alpha"][case] + avg_data["mean_beta"][case]) ** 2 *
                (avg_data["mean_alpha"][case] + avg_data["mean_beta"][case] + 1))
+        std = (avg_data["std_alpha"][case] * avg_data["std_beta"][case]) / \
+              ((avg_data["std_alpha"][case] + avg_data["std_beta"][case]) ** 2 *
+               (avg_data["std_alpha"][case] + avg_data["std_beta"][case] + 1))
         avg_data["var_beta_fct"].append(var)
+        avg_data["std_beta_fct"].append(std)
 
         # info about the setup, assuming constant sample rate of 100 Hz
         if "n_seeds" in data[case]:
@@ -191,6 +199,7 @@ def average_results_for_each_case(data: list) -> dict:
         if "ratio_MB_MF" in data[case]:
             avg_data["ratio_MB_MF"].append(data[case]["ratio_MB_MF"])
             avg_data["MF_episodes"].append(data[case]["MF_episodes"])
+            avg_data["e_number_mb"].append(data[case]["MB_episode_no"])
 
         # if environment models are used, get mean and std. of train- and validation losses vs. epoch
         if "train_loss_cd" in data[case]:
@@ -227,7 +236,7 @@ def merge_results_for_diff_seeds(data: list, n_seeds: int) -> dict:
 
     merged_data = {"n_workers": n_traj, "n_seeds": n_seeds, "cl": pt.zeros(shape), "cd": pt.zeros(shape),
                    "actions": pt.zeros(shape), "rewards": pt.zeros(shape), "alpha": pt.zeros(shape),
-                   "beta": pt.zeros(shape), "ratio_MB_MF": [], "MF_episodes": []}
+                   "beta": pt.zeros(shape), "ratio_MB_MF": [], "MF_episodes": [], "MB_episode_no": []}
     keys = ["cl", "cd", "actions", "rewards", "alpha", "beta"]
 
     for seed in range(n_seeds):
@@ -243,6 +252,7 @@ def merge_results_for_diff_seeds(data: list, n_seeds: int) -> dict:
         if "MB_MF" in data[i]:
             merged_data["ratio_MB_MF"].append(data[i]["MB_MF"])
             merged_data["MF_episodes"].append(data[i]["MF_episodes"])
+            merged_data["MB_episode_no"].append(data[i]["no_e_mb"])
 
     return merged_data
 

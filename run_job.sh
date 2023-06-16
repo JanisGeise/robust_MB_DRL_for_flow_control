@@ -14,4 +14,4 @@ source ~/drlfoam/setup-env --container
 
 # start a training, save output to log_seed(seed).log
 # $1 = path (-o), $2 = episodes (-i), $3 = runners (-r), $4 = buffer (-b), $5 = finish (-f), $6 = N seed
-python3 run_training.py -o "${1}" -i "${2}" -r "${3}" -b "${4}" -f "${5}" -s "${6}" -e "slurm" &> "log_seed${6}.log"
+python3 run_training.py -o "${1}" -i "${2}" -r "${3}" -b "${4}" -f "${5}" -m "${6}" -e "slurm" &> "log_seed${6}.log"

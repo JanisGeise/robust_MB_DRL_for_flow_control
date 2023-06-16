@@ -109,9 +109,9 @@ def plot_rewards_vs_episode(settings: dict, reward_mean: Union[list, pt.Tensor],
 
     ax.set_ylabel("$\\bar{r}$")
     ax.set_xlabel("$e$")
-    # ax.set_xlim(0, 200)
+    ax.set_xlim(0, len(reward_mean[0]))
     fig.tight_layout()
-    ax.legend(loc="lower right", framealpha=1.0, ncol=1)
+    ax.legend(loc="lower right", framealpha=1.0, ncol=2)
     fig.subplots_adjust(wspace=0.2)
     plt.savefig(join(settings["main_load_path"], setup["path_controlled"], "plots", "rewards_vs_episode.png"),
                 dpi=340)
@@ -121,7 +121,7 @@ def plot_rewards_vs_episode(settings: dict, reward_mean: Union[list, pt.Tensor],
 
 
 def plot_cl_cd_alpha_beta(settings: dict, controlled_cases: Union[list, pt.Tensor],
-                          uncontrolled_case: Union[list, pt.Tensor] = None, plot_coeffs=True) -> None:
+                          uncontrolled_case: Union[list, pt.Tensor] = None, plot_coeffs=True, factor: int = 10) -> None:
     """
     plot either cl and cd vs. time or alpha and beta vs. time
 
@@ -129,6 +129,7 @@ def plot_cl_cd_alpha_beta(settings: dict, controlled_cases: Union[list, pt.Tenso
     :param controlled_cases: results from the loaded cases with active flow control
     :param uncontrolled_case: reference case containing results from uncontrolled flow past cylinder
     :param plot_coeffs: 'True' means cl and cd will be plotted, otherwise alpha and beta will be plotted wrt to time
+    :param factor: factor for converting the physical time into non-dimensional time, t^* = u * t / d
     :return: None
     """
     fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(14, 6))
@@ -140,32 +141,34 @@ def plot_cl_cd_alpha_beta(settings: dict, controlled_cases: Union[list, pt.Tenso
         # ax[1].set_ylim(2, 3.75)          # Re = 500
         n_cases = range(len(settings["case_name"]) + 1)
         ylabels = ["$c_L$", "$c_D$"]
+        x_min = 0
     else:
         keys = ["t", "alpha", "beta"]
         save_name = "comparison_alpha_beta"
         ylabels = ["$\\alpha$", "$\\beta$"]
         n_cases = range(1, len(settings["case_name"]) + 1)
+        x_min = 4 * factor      # control starts at t = 4s, so there are no alpha & beta available for t < 4s
 
     for c in n_cases:
         for i in range(2):
             if i == 0:
                 if c == 0:
-                    ax[i].plot(uncontrolled_case[keys[0]] * 10, uncontrolled_case[keys[1]], color="black",
+                    ax[i].plot(uncontrolled_case[keys[0]] * factor, uncontrolled_case[keys[1]], color="black",
                                label="uncontrolled")
                 else:
-                    ax[i].plot(controlled_cases[c - 1][keys[0]], controlled_cases[c - 1][keys[1]],
+                    ax[i].plot(controlled_cases[c - 1][keys[0]] * factor, controlled_cases[c - 1][keys[1]],
                                color=settings["color"][c - 1], label=settings["legend"][c - 1])
                 ax[i].set_ylabel(ylabels[0], fontsize=13)
             else:
                 if c == 0:
-                    ax[i].plot(uncontrolled_case[keys[0]], uncontrolled_case[keys[2]], color="black")
+                    ax[i].plot(uncontrolled_case[keys[0]] * factor, uncontrolled_case[keys[2]], color="black")
                 else:
-                    ax[i].plot(controlled_cases[c - 1][keys[0]], controlled_cases[c - 1][keys[2]],
+                    ax[i].plot(controlled_cases[c - 1][keys[0]] * factor, controlled_cases[c - 1][keys[2]],
                                color=settings["color"][c - 1])
                 ax[i].set_ylabel(ylabels[1], fontsize=13)
 
             ax[1].set_xlabel("$t^*$", fontsize=14)
-            ax[i].set_xlim(0, 200)
+            ax[i].set_xlim(x_min, controlled_cases[0]["t"].iloc[-1] * factor)
     fig.tight_layout()
     fig.legend(loc="upper center", framealpha=1.0, fontsize=10, ncol=2)
     fig.subplots_adjust(wspace=0.2, top=0.84)
@@ -175,17 +178,18 @@ def plot_cl_cd_alpha_beta(settings: dict, controlled_cases: Union[list, pt.Tenso
     plt.close("all")
 
 
-def plot_omega(settings: dict, controlled_cases: Union[list, pt.Tensor]) -> None:
+def plot_omega(settings: dict, controlled_cases: Union[list, pt.Tensor], factor: int = 10) -> None:
     """
     plot omega (actions) vs. time
 
     :param settings: dict containing all the paths etc.
     :param controlled_cases: results from the loaded cases with active flow control
+    :param factor: factor for converting the physical time into non-dimensional time, t^* = u * t / d
     :return: None
     """
     fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(8, 5))
     for c in range(len(settings["case_name"])):
-        ax.plot(controlled_cases[c]["t"], controlled_cases[c]["omega"], color=settings["color"][c],
+        ax.plot(controlled_cases[c]["t"] * factor, controlled_cases[c]["omega"], color=settings["color"][c],
                 label=settings["legend"][c])
 
     ax.set_ylabel("$\omega$", fontsize=13)
@@ -223,6 +227,48 @@ def plot_variance_of_beta_dist(settings: dict, var_beta_dist: Union[list, pt.Ten
     plt.close("all")
 
 
+def plot_cl_cd_trajectories(settings: dict, data: list, number: int, e: int = 1, factor: int = 10) -> None:
+    """
+    plots the trajectory of cl and cd for different episodes of the training, meant to use for either comparing MF-
+    trajectories to trajectories generated by the environment models or comparing trajectories from environment models
+    run with different settings to each other
+
+    :param settings: setup containing all the paths etc.
+    :param data: trajectory data to plot
+    :param number: number of the trajectory within the data set (either within the episode or in total)
+    :param e: episode number
+    :param factor: factor for converting the physical time into non-dimensional time, t^* = u * t / d
+    :return: None
+    """
+    fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(15, 5))
+    epochs = pt.tensor(list(range(len(data[0]["cl"][1, :, number])))) / factor
+    for n in range(len(data)):
+        for i in range(3):
+            try:
+                if i == 0:
+                    # 2nd episode is always MB (if MB-DRL was used)
+                    ax[i].plot(epochs, data[n]["cl"][e, :, number], color=settings["color"][n],
+                               label=f"{settings['legend'][n]}, episode {e + 1}")
+                    ax[i].set_ylabel("$c_L$", fontsize=13)
+                elif i == 1:
+                    ax[i].plot(epochs, data[n]["cd"][e, :, number], color=settings["color"][n])
+                    ax[i].set_ylabel("$c_D$", fontsize=13)
+                else:
+                    ax[i].plot(epochs, data[n]["actions"][e, :, number], color=settings["color"][n])
+                    ax[i].set_ylabel("$omega$", fontsize=13)
+                ax[i].set_xlabel("$t^*$", fontsize=13)
+            except IndexError:
+                print("omit plotting trajectories of failed cases")
+    fig.tight_layout()
+    fig.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=2)
+    fig.subplots_adjust(wspace=0.25, top=0.90)
+    plt.savefig(join(settings["main_load_path"], settings["path_controlled"], "plots",
+                     f"comparison_traj_cl_cd_{e}.png"), dpi=340)
+    plt.show(block=False)
+    plt.pause(2)
+    plt.close("all")
+
+
 def plot_total_reward(settings: dict, reward_mean: list, reward_std: list, n_cases: int) -> None:
     """
     plot the total rewards of the complete training for each case
@@ -241,10 +287,9 @@ def plot_total_reward(settings: dict, reward_mean: list, reward_std: list, n_cas
     ax.set_ylabel("$total$ $reward$", usetex=True, fontsize=13)
     ax.set_xlabel("$case$ $number$", usetex=True, fontsize=13)
     ax.set_xticks(range(1, n_cases + 1, 1))
-    ax.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=2)
+    ax.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=1)
     plt.grid(which="major", axis="y", linestyle="--", alpha=0.85, color="black", lw=1)
-    plt.savefig("".join([settings["main_load_path"], settings["path_controlled"], "/plots/total_rewards.png"]),
-                dpi=600)
+    plt.savefig(join(settings["main_load_path"], settings["path_controlled"], "plots", "total_rewards.png"), dpi=340)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")
@@ -295,7 +340,7 @@ def plot_numerical_setup(settings: dict) -> None:
     plt.arrow(-0.1, h * 2 / 3 + 0.025, 0.075, -0.05, color="black", head_width=0.015, clip_on=False)
     plt.arrow(-0.1 + l, h * 2 / 3, 0.075, -0.05, color="black", head_width=0.015, clip_on=False)
 
-    plt.annotate("$inlet$", (-0.15, h * 2 / 3 + 0.05), annotation_clip=False, usetex=True, fontsize=13)
+    plt.annotate("$inlet$", (-0.17, h * 2 / 3 + 0.05), annotation_clip=False, usetex=True, fontsize=13)
     plt.annotate("$\\frac{x}{d}$", (0.1, -0.065), annotation_clip=False, usetex=True, fontsize=16)
     plt.annotate("$\\frac{y}{d}$", (-0.1, 0.065), annotation_clip=False, usetex=True, fontsize=16)
     plt.annotate("$outlet$", (-0.2 + l, h * 2 / 3 + 0.01), annotation_clip=False, usetex=True, fontsize=13)
@@ -329,7 +374,7 @@ def plot_numerical_setup(settings: dict) -> None:
     ax.set_aspect("equal")
     fig.tight_layout()
     fig.subplots_adjust(left=0.1, right=0.92)
-    plt.savefig("".join([settings["main_load_path"], settings["path_controlled"], "/plots/domain_setup.png"]), dpi=600)
+    plt.savefig(join(settings["main_load_path"], settings["path_controlled"], "plots", "domain_setup.png"), dpi=340)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")
@@ -366,74 +411,32 @@ def plot_train_validation_loss(settings: dict, mse_train: Union[list, pt.Tensor]
             ax[i].fill_between(x, mse_train - std_dev_train, mse_train + std_dev_train, color="blue", alpha=0.3)
             ax[i].set_ylabel("$MSE$ $loss$", usetex=True, fontsize=13)
             ax[i].set_xlabel("$epoch$ $number$", usetex=True, fontsize=13)
-            ax[i].set_title("$environment$ $model$ $for$ $c_l$ $\&$ $p_i$", usetex=True, fontsize=14)
+            ax[i].set_title("$environment$ $model$ $for$ $c_L$ $\&$ $p_i$", usetex=True, fontsize=14)
             ax[i].set_yscale("log")
 
         else:
             x = range(len(mse_train_cd))
             ax[i].plot(x, mse_train_cd, color="blue", label="training loss")
             ax[i].plot(x, mse_val_cd, color="red", label="validation loss")
-            ax[i].fill_between(x, mse_val_cd - std_dev_val_cd, mse_val_cd + std_dev_val_cd, color="red", alpha=0.3)
             ax[i].fill_between(x, mse_train_cd - std_dev_train_cd, mse_train_cd + std_dev_train_cd, color="blue",
                                alpha=0.3)
             ax[i].set_xlabel("$epoch$ $number$", usetex=True, fontsize=13)
-            ax[i].set_title("$environment$ $model$ $for$ $c_d$", usetex=True, fontsize=14)
+            ax[i].set_title("$environment$ $model$ $for$ $c_D$", usetex=True, fontsize=14)
             ax[i].set_yscale("log")
             ax[i].set_ylabel("$MSE$ $loss$", usetex=True, fontsize=13)
 
     ax[1].legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=2)
     fig.tight_layout()
     fig.subplots_adjust(wspace=0.2)
-    plt.savefig("".join([settings["main_load_path"], settings["path_controlled"],
-                         f"/plots/train_val_losses_case{case}.png"]),
-                dpi=600)
-    plt.show(block=False)
-    plt.pause(2)
-    plt.close("all")
-
-
-def plot_cl_cd_trajectories(settings: dict, data: List[dict], number: int, e: int = 1) -> None:
-    """
-    plots the trajectory of cl and cd for different episodes of the training, meant to use for either comparing MF-
-    trajectories to trajectories generated by the environment models or comparing trajectories from environment models
-    run with different settings to each other
-
-    :param settings: setup containing all the paths etc.
-    :param data: trajectory data to plot
-    :param number: number of the trajectory within the data set (either within the episode or in total)
-    :param e: episode number
-    :return: None
-    """
-    fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(15, 5))
-    epochs = range(len(data[0]["cl"][1, :, number]))
-    for n in range(len(data)):
-        for i in range(3):
-            try:
-                if i == 0:
-                    # 2nd episode is always MB (if MB-DRL was used)
-                    ax[i].plot(epochs, data[n]["cl"][e, :, number], color=settings["color"][n],
-                               label=f"{settings['legend'][n]}, episode {e + 1}")
-                    ax[i].set_ylabel("$c_L$", fontsize=13)
-                elif i == 1:
-                    ax[i].plot(epochs, data[n]["cd"][e, :, number], color=settings["color"][n])
-                    ax[i].set_ylabel("$c_D$", fontsize=13)
-                else:
-                    ax[i].plot(epochs, data[n]["actions"][e, :, number], color=settings["color"][n])
-                    ax[i].set_ylabel("$omega$", fontsize=13)
-                ax[i].set_xlabel("$t^*$", fontsize=13)
-            except IndexError:
-                print("omit plotting trajectories of failed cases")
-    fig.tight_layout()
-    fig.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=2)
-    fig.subplots_adjust(wspace=0.25, top=0.90)
     plt.savefig(join(settings["main_load_path"], settings["path_controlled"], "plots",
-                     f"comparison_traj_cl_cd_{e}.png"), dpi=340)
+                     "train_val_losses_case{case}.png"),
+                dpi=340)
     plt.show(block=False)
     plt.pause(2)
     plt.close("all")
 
 
-def plot_mean_std_trajectories(settings: dict, data: list) -> None:
+def plot_mean_std_trajectories(settings: dict, data: list, factor: int = 10) -> None:
     """
     plots the trajectory of cl and cd for different episodes of the training, meant to use for either comparing MF-
     trajectories to trajectories generated by the environment models or comparing trajectories from environment models
@@ -441,11 +444,11 @@ def plot_mean_std_trajectories(settings: dict, data: list) -> None:
 
     :param settings: setup containing all the paths etc.
     :param data: trajectory data to plot
+    :param factor: factor for converting the physical time into non-dimensional time, t^* = u * t / d
     :return: None
     """
-    # fig, ax = plt.subplots(nrows=2, ncols=4, figsize=(15, 8), sharey="row", sharex="col")
-    fig, ax = plt.subplots(nrows=4, ncols=2, figsize=(7, 8), sharey="col", sharex="all")
-    epochs = pt.tensor(list(range(len(data[0]["cl"][1, :, 0])))) / 10       # TODO: only for Re = 100
+    fig, ax = plt.subplots(nrows=4, ncols=2, figsize=(6, 8), sharey="col", sharex="all")
+    epochs = pt.tensor(list(range(len(data[0]["cl"][1, :, 0])))) / factor
     e = [24, 74, 124, 199]
     for n in range(len(data)):
         for k in range(4):          # k = rows
@@ -473,12 +476,12 @@ def plot_mean_std_trajectories(settings: dict, data: list) -> None:
                     if i == 1:
                         ax[k][i].set_ylabel("$\\bar{c}_L$")
 
-                ax[k][i].set_xlim(0, 40)
+                ax[k][i].set_xlim(0, data[0]["cl"].size()[1] / factor)
     ax[-1][0].set_xlabel("$t^*$")
     ax[-1][1].set_xlabel("$t^*$")
     fig.tight_layout()
     fig.legend(loc="upper center", framealpha=1.0, ncol=2)
-    fig.subplots_adjust(wspace=0.3, top=0.88)
+    fig.subplots_adjust(wspace=0.3, top=0.9)
     plt.savefig(join(settings["main_load_path"], settings["path_controlled"], "plots",
                      "comparison_traj_cd_mean_std.png"), dpi=340)
     plt.show(block=False)
@@ -489,25 +492,36 @@ def plot_mean_std_trajectories(settings: dict, data: list) -> None:
 if __name__ == "__main__":
     # Setup
     setup = {
-        "main_load_path": r"../drlfoam/",                           # top-level directory
-        "path_to_probes": r"postProcessing/probes/0/p",              # path to probes (usually always the same)
-        "path_uncontrolled": r"run/uncontrolled/",                  # path to uncontrolled reference case
-        "path_controlled": r"examples/run_training/",               # path to controlled cases
-        "path_final_results": r"results_best_policy/",              # path to the results using the best policy
-        # "case_name": ["seed0/", "seed1/", "seed2/"],
-        "case_name": ["e80_r10_b10_f8_MF/", "e80_r10_b10_f5_MB/"],  # dirs with the training results (controlled)
-        "e_trajectory": [0, 1, 4, 75, 76, 79],             # for which episodes should a trajectory be plotted (cl & cd)
-        "n_probes": 12,         # number of probes placed in flow field
-        "avg_over_cases": False,                            # if cases should be averaged over, e.g. different seeds
-        "plot_final_res": False,                        # flag for plotting the results using final policy, if available
-        "param_study": True,           # flag if parameter study, only used for generating legend entries automatically
-        "color": ["blue", "red", "green", "darkviolet"],  # line colors, uncontrolled = black (if plot final res = True)
-        "legend": ["MF-DRL #1", "MB-DRL #1"]               # legend entries, uncontrolled is added automatically if True
+        "main_load_path": r"/home/janis/Hiwi_ISM/results_drlfoam_MB/",
+        "path_to_probes": r"postProcessing/probes/0/p",  # path to the file containing trajectories of probes
+        "path_uncontrolled": r"run/uncontrolled_re100/",  # path to uncontrolled reference case
+        "path_controlled": r"run/final_routine_AWS/",
+        "path_final_results": r"results_best_policy/",  # path to the results using the best policy
+        "case_name": ["e200_r10_b10_f8_MF/", "e200_r10_b10_f8_MB_1model/",
+                      "e200_r10_b10_f8_MB_5models/", "e200_r10_b10_f8_MB_5models_threshold40/",
+                      "e200_r10_b10_f8_MB_10models_threshold50/", "e200_r10_b10_f8_MB_10models_threshold30/"],
+        # "case_name": ["e200_r10_b10_f8_MF/seed4/", "e200_r10_b10_f8_MB_1model/seed2/",
+        #               "e200_r10_b10_f8_MB_5models/seed1/", "e200_r10_b10_f8_MB_5models_threshold40/seed1/",
+        #               "e200_r10_b10_f8_MB_10models_threshold50/seed0/",
+        #               "e200_r10_b10_f8_MB_10models_threshold30/seed4/"],
+        "e_trajectory": [4, 9, 24, 49, 74, 99, 124, 149, 174, 199],   # episodes trajectories (cl & cd, not avg.)
+        "n_probes": 12,  # number of probes placed in flow field
+        "avg_over_cases": True,  # if cases should be averaged over, e.g. different seeds
+        "plot_final_res": False,  # if the final policy already ran in openfoam, plot the results
+        "param_study": False,  # flag if parameter study, only used for generating legend entries automatically
+        "mark_e_cfd": False,  # flag if CFD episodes should be marked (in case of avg., 1st seed is taken)
+        "color": ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f',
+                  '#bcbd22', '#17becf'],  # default color cycle
+        "legend": ["MF", "MB, $N_{m} = 1$", "MB, $N_{m} = 5, N_{thr} = 3$", "MB, $N_{m} = 5, N_{thr} = 2$",
+                   "MB, $N_{m} = 10, N_{thr} = 5$", "MB, $N_{m} = 10, N_{thr} = 3$"]
     }
 
     # create directory for plots
     if not path.exists(setup["main_load_path"] + setup["path_controlled"] + "plots"):
         mkdir(setup["main_load_path"] + setup["path_controlled"] + "plots")
+
+    # use latex fonts
+    plt.rcParams.update({"text.usetex": True})
 
     # load all the data
     all_data = load_all_data(setup)
