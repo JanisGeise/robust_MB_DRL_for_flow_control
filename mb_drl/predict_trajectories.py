@@ -7,6 +7,7 @@
 """
 import os
 import sys
+import logging
 import argparse
 import torch as pt
 
@@ -23,6 +24,8 @@ from drlfoam.environment.env_model_rotating_cylinder import create_slurm_config
 from drlfoam.environment.execute_prediction import predict_trajectories
 from drlfoam.execution.manager import TaskManager
 from drlfoam.execution.slurm import submit_and_wait
+
+logging.basicConfig(level=logging.INFO)
 
 
 def assess_model_performance(s_model: list, a_model: list, r_model: list, agent: PPOAgent) -> list:
@@ -41,12 +44,18 @@ def assess_model_performance(s_model: list, a_model: list, r_model: list, agent:
     for m in range(a_model[0].size()[-1]):
         values = [agent._value(s[:, :, m]) for s in s_model]
 
-        log_p_old = pt.cat([agent._policy.predict(s[:-1, :, m], a[:-1, m])[0] for s, a in zip(s_model, a_model)])
+        # if we have more than 1 action, a_model = n_buffer * [len_traj, n_actions, n_models],
+        # else a_model = n_buffer * [n_traj, n_models]
+        if len(a_model[0].size()) > 2:
+            a_model_tmp = [i[:, :, m] for i in a_model]
+        else:
+            a_model_tmp = [i[:, m] for i in a_model]
+        log_p_old = pt.cat([agent._policy.predict(s[:-1, :, m], a[:-1])[0] for s, a in zip(s_model, a_model_tmp)])
         gaes = pt.cat([compute_gae(r[:, m], v, agent._gamma, agent._lam) for r, v in zip(r_model, values)])
         gaes = (gaes - gaes.mean()) / (gaes.std() + EPS_SP)
 
         states_wf = pt.cat([s[:-1, :, m] for s in s_model])
-        actions_wf = pt.cat([a[:-1, m] for a in a_model])
+        actions_wf = pt.cat([a[:-1] for a in a_model_tmp])
         log_p_new, entropy = agent._policy.predict(states_wf, actions_wf)
         p_ratio = (log_p_new - log_p_old).exp()
         policy_objective = gaes * p_ratio
@@ -58,7 +67,7 @@ def assess_model_performance(s_model: list, a_model: list, r_model: list, agent:
 
 def fill_buffer_from_models(env_model: list, episode: int, path: str, observation: dict, n_input: int, n_probes: int,
                             buffer_size: int, len_traj: int, agent: PPOAgent, env: str = "local",
-                            seed: int = 0) -> Tuple[list, list]:
+                            seed: int = 0, n_actions: int = 1) -> Tuple[list, list]:
     """
     creates trajectories using data from the CFD environment as initial states and the previously trained environment
     models in order to fill the buffer
@@ -74,6 +83,7 @@ def fill_buffer_from_models(env_model: list, episode: int, path: str, observatio
     :param agent: PPO-agent
     :param env: environment, either 'local' or 'slurm', is set in 'run_training.py'
     :param seed: seed value, is set in 'run_training.py'
+    :param n_actions: number of actions
     :return: a list with the length of the buffer size containing the generated trajectories
     """
     # ensure reproducibility ('no' is chosen in predict_trajectories.py which is called from run_training)
@@ -82,7 +92,12 @@ def fill_buffer_from_models(env_model: list, episode: int, path: str, observatio
         pt.cuda.manual_seed_all(seed)
 
     predictions, shape = [], (len_traj, len(env_model))
-    r_model_tmp, a_model_tmp, s_model_tmp = pt.zeros(shape), pt.zeros(shape), pt.zeros((shape[0], n_probes, shape[1]))
+    if n_actions == 1:
+        a_model_tmp = pt.zeros(shape)
+    else:
+        a_model_tmp = pt.zeros((shape[0], n_actions, shape[1]))
+
+    r_model_tmp, s_model_tmp = pt.zeros(shape), pt.zeros((shape[0], n_probes, shape[1]))
     r_model, a_model, s_model = [], [], []
 
     # min- / max-values used for normalization
@@ -92,11 +107,20 @@ def fill_buffer_from_models(env_model: list, episode: int, path: str, observatio
     if env == "slurm":
         pt.save(observation, join(path, "obs_pred_traj.pt"))
         pt.save({"train_path": path, "env_model": env_model, "n_probes": n_probes, "n_input": n_input,
-                 "episode": episode, "min_max": min_max, "len_traj": len_traj}, join(path, "settings_prediction.pt"))
+                 "episode": episode, "min_max": min_max, "len_traj": len_traj, "n_actions": n_actions},
+                join(path, "settings_prediction.pt"))
 
-        # write shell script for executing the prediction -> cwd on HPC = 'drlfoam/examples/'
+        # write shell script for executing the model training -> on HPC = '~/drlfoam/examples/' instead of '/examples/'
         current_cwd = os.getcwd()
-        config = create_slurm_config(case="pred_traj", exec_cmd="python3 execute_prediction.py -i $1 -n $2 -p $3")
+
+        # on AWS, cwd should start with /fsx/, e.g. '/fsx/drlfoam/'
+        if current_cwd.startswith("/fsx/"):
+            aws = True
+        else:
+            aws = False
+
+        config = create_slurm_config(case="pred_traj", exec_cmd="python3 execute_prediction.py -i $1 -n $2 -p $3",
+                                     aws=aws)
         config.write(join(current_cwd, path, "execute_prediction.sh"))
         manager = TaskManager(n_runners_max=10)
 
@@ -131,9 +155,10 @@ def fill_buffer_from_models(env_model: list, episode: int, path: str, observatio
 
             result = [pt.load(join(BASE_PATH, "examples", path, f"prediction_no{i}.pt")) for i in pred_id]
             for res in result:
-                print(f"filling buffer with trajectory {counter + 1}/{buffer_size} using environment models")
+                logging.info(f"filling buffer with trajectory {counter + 1}/{buffer_size} using environment models")
                 if res["ok"][0]:
                     predictions.append(res["pred"])
+                    # the loaded tensors when using slurm are equivalent to the *_tmp tensors when using local
                     r_model.append(res["r_model"])
                     a_model.append(res["a_model"])
                     s_model.append(res["s_model"])
@@ -147,7 +172,7 @@ def fill_buffer_from_models(env_model: list, episode: int, path: str, observatio
             [os.remove(join(BASE_PATH, "examples", path, f"prediction_no{i}.pt")) for i in pred_id]
 
         else:
-            print(f"filling buffer with trajectory {counter + 1}/{buffer_size} using environment models")
+            logging.info(f"filling buffer with trajectory {counter + 1}/{buffer_size} using environment models")
 
             # for each trajectory sample input states from all available data within the CFD buffer
             no = pt.randint(low=0, high=observation["cd"].size()[1], size=(1, 1)).item()
@@ -163,7 +188,6 @@ def fill_buffer_from_models(env_model: list, episode: int, path: str, observatio
                 predictions.append(pred)
 
                 # compute the uncertainty of the predictions for the rewards wrt the model number
-                # TODO: check if this is still compatible with changes in drlfoam for pinball env.
                 for model in range(len(env_model)):
                     tmp, _ = predict_trajectories(env_model, episode, path,
                                                   observation["states"][:, no, :], observation["cd"][:, no, :],
@@ -171,10 +195,14 @@ def fill_buffer_from_models(env_model: list, episode: int, path: str, observatio
                                                   observation["alpha"][:, no, :], observation["beta"][:, no, :],
                                                   n_input, min_max, len_traj, model_no=model)
                     r_model_tmp[:, model] = tmp["rewards"]
-                    a_model_tmp[:, model] = tmp["actions"]
                     s_model_tmp[:, :, model] = tmp["states"]
 
-                # same data structure as required in update-method of PPO-agent
+                    if n_actions == 1:
+                        a_model_tmp[:, model] = tmp["actions"]
+                    else:
+                        a_model_tmp[:, :, model] = tmp["actions"]
+
+                # same data structure as required in update-method of PPO-agent -> list with N_buffer trajectories
                 r_model.append(r_model_tmp)
                 a_model.append(a_model_tmp)
                 s_model.append(s_model_tmp)
@@ -188,7 +216,7 @@ def fill_buffer_from_models(env_model: list, episode: int, path: str, observatio
 
         # if all the trajectories are invalid, abort training in order to avoid getting stuck in while-loop forever
         if failed_total >= max_iter:
-            print(f"could not generate valid trajectories after {max_iter} iterations... going back to CFD")
+            logging.warning(f"could not generate valid trajectories after {max_iter} iterations... going back to CFD")
             counter = buffer_size
 
     if failed_total < max_iter:
@@ -220,9 +248,9 @@ def print_trajectory_info(no: int, buffer_size: int, i: int, tra: dict, key: str
     :return: None
     """
     vals = [(k, pt.min(tra[k]).item(), pt.max(tra[k]).item(), pt.mean(tra[k]).item()) for k in tra if k == key]
-    print(f"\ndiscarding trajectory {no + 1}/{buffer_size} due to invalid values [try no. {i}]:")
+    logging.info(f"discarding trajectory {no + 1}/{buffer_size} due to invalid values [try no. {i}]:")
     for val in vals:
-        print(f"\tmin / max / mean {val[0]}: {round(val[1], 5)}, {round(val[2], 5)}, {round(val[3], 5)}")
+        logging.info(f"\tmin / max / mean {val[0]}: {round(val[1], 5)}, {round(val[2], 5)}, {round(val[3], 5)}")
 
 
 if __name__ == "__main__":

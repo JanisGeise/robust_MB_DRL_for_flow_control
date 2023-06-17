@@ -3,7 +3,9 @@
     as well as functions for loading and sorting the trajectories, generating feature-label pairs and is responsible for
     managing the execution of the model-training.
 """
+import os
 import sys
+import logging
 import torch as pt
 
 from time import time
@@ -20,6 +22,8 @@ from drlfoam.execution.slurm import submit_and_wait
 
 BASE_PATH = environ.get("DRL_BASE", "")
 sys.path.insert(0, BASE_PATH)
+
+logging.basicConfig(level=logging.INFO)
 
 
 class SetupEnvironmentModel:
@@ -123,6 +127,8 @@ class SetupEnvironmentModel:
         predict = self.compute_statistics(self._time_prediction)
         ppo = self.compute_statistics(self._time_ppo)
 
+        # don't use logging here, because this is printed after the training is completed
+        # -> so post-processing scripts don't need to be adapted
         print(f"time per CFD episode:\n\tmean: {cfd[0]}s\n\tstd: {cfd[1]}s\n\tmin: {cfd[2]}s\n\tmax: {cfd[3]}s\n\t"
               f"= {cfd[4]} % of total training time")
         print(f"time per model training:\n\tmean: {model[0]}s\n\tstd: {model[1]}s\n\tmin: {model[2]}s\n\tmax:"
@@ -240,8 +246,8 @@ def check_cfd_data(files: list, len_traj: int, n_probes: int, buffer_size: int =
     # if we don't have any trajectories generated within the last 3 CFD episodes, it doesn't make sense to
     # continue with the training
     if data["rewards"][:, ok].size()[1] == 0:
-        print("[env_model_rotating_cylinder.py]: could not find any valid trajectories from the last 3 CFD episodes!"
-              "\nAborting training.")
+        logging.critical("[env_model_rotating_cylinder.py]: could not find any valid trajectories from the last 3 CFD"
+                         "episodes!\nAborting training.")
         exit(0)
 
     # add one dimension to all parameters, so in case of pinball the parameters can be merged into 1 tensor
@@ -460,9 +466,15 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
         pt.save({"train_path": train_path, "env_model": env_model, "epochs": e_re_train, "load": load},
                 join(train_path, "settings_model_training.pt"))
 
-        # write shell script for executing the model training -> cwd on HPC = 'drlfoam/examples/'
+        # write shell script for executing the model training -> on HPC = '~/drlfoam/examples/' instead of '/examples/'
         current_cwd = getcwd()
-        config = create_slurm_config(case="model_train", exec_cmd="python3 train_env_models.py -m $1 -p $2")
+
+        # on AWS, cwd should start with /fsx/, e.g. '/fsx/drlfoam/'
+        if current_cwd.startswith("/fsx/"):
+            aws = True
+        else:
+            aws = False
+        config = create_slurm_config(case="model_train", exec_cmd="python3 train_env_models.py -m $1 -p $2", aws=aws)
         config.write(join(current_cwd, train_path, "execute_model_training.sh"))
         manager = TaskManager(n_runners_max=10)
 
@@ -498,6 +510,30 @@ def wrapper_train_env_model_ensemble(train_path: str, cfd_obs: list, len_traj: i
         return model_ensemble, losses[0], init_data
     else:
         return model_ensemble, losses, init_data
+
+
+def check_finish_time(base_path: str, t_end: int, environment: str) -> None:
+    """
+    checks if the user-specified finish time is greater than the end time of the base case, if not then exit with error
+    message
+
+    :param base_path: BASE_PATH defined in run_training
+    :param t_end: user-specified finish time
+    :param environment: environment, either rotatingCylinder2D or rotatingPinball2D
+    :return: None
+    """
+    pwd = join(base_path, "openfoam", "test_cases", environment, "system", "controlDict")
+    with open(pwd, "r") as f:
+        lines = f.readlines()
+
+    # get the end time of the base case, normally endTime is specified in l. 28, but in case of modifications, check
+    # lines 20-35
+    t_base = [float(i.strip(";\n").split(" ")[-1]) for i in lines[20:35] if i.startswith("endTime")][0]
+
+    if t_base >= t_end:
+        logging.critical(f"specified finish time is smaller than end time of base case! The finish time needs to be "
+                         f"greater than {t_base}. Exiting...")
+        exit(0)
 
 
 if __name__ == "__main__":

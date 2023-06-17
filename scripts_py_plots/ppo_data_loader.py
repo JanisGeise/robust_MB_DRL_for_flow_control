@@ -172,8 +172,7 @@ def average_results_for_each_case(data: list) -> dict:
             ok = data[case][key].abs().sum(dim=1).bool().all(dim=0)
             shape = (n_episodes, len_trajectory * sum(ok).item())
 
-            # reshape data and compute mean wrt to episode -> rewards are always scalar, so use them to ignore failed
-            # trajectories
+            # reshape data, so that the mean wrt episodes can be computed easily over the remaining dimension
             names[key] = data[case][key][:, :, ok].reshape(shape)
 
             avg_data[f"mean_" + key].append(pt.mean(names[key], dim=1))

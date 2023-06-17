@@ -53,8 +53,8 @@ DEFAULT_CONFIG = {
             "n_neurons": 512,
             "activation": pt.nn.functional.relu
         },
-        "policy_lr" : 4.0e-4,
-        "value_lr" : 4.0e-4
+        "policy_lr": 1.0e-4,
+        "value_lr": 1.0e-4
     }
 }
 
@@ -112,6 +112,9 @@ def main(args):
     if cuda.is_available():
         cuda.manual_seed_all(args.seed)
 
+    # check if the user-specified finish time is greater than the end time of the base case (required for training)
+    check_finish_time(BASE_PATH, end_time, simulation)
+
     # create a directory for training
     makedirs(training_path, exist_ok=True)
 
@@ -146,8 +149,9 @@ def main(args):
         )
         """
         # for AWS
-        config = SlurmConfig(n_tasks=2, n_nodes=1, partition="queue-1", time="00:30:00", modules=["openmpi/4.1.5"],
-                             constraint = "c5a.24xlarge", commands_pre=["source /fsx/OpenFOAM/OpenFOAM-v2206/etc/bashrc",
+        config = SlurmConfig(n_tasks=env.mpi_ranks, n_nodes=1, partition="queue-1", time="03:00:00",
+                             modules=["openmpi/4.1.5"], constraint = "c5a.24xlarge",
+                             commands_pre=["source /fsx/OpenFOAM/OpenFOAM-v2206/etc/bashrc",
                              "source /fsx/drlfoam/setup-env"], commands=["source /fsx/OpenFOAM/OpenFOAM-v2206/etc/bashrc",
                              "source /fsx/drlfoam/setup-env"])
         """
@@ -238,7 +242,8 @@ def main(args):
                                                                           n_input=env_model.t_input,
                                                                           len_traj=env_model.len_traj,
                                                                           buffer_size=buffer_size, agent=agent,
-                                                                          env=executer, seed=args.seed)
+                                                                          env=executer, seed=args.seed,
+                                                                          n_actions=env.n_actions)
             env_model.time_mb_episode()
             env_model.policy_loss.append(current_policy_loss)
 
@@ -283,8 +288,8 @@ def main(args):
             # if we don't have any trajectories generated within the last 3 CFD episodes, it doesn't make sense to
             # continue with the training
             except IndexError as e:
-                print(f"[run_training.py]: {e}, could not find any valid trajectories from the last 3 CFD episodes!"
-                      "\nAborting training.")
+                logging.critical(f"[run_training.py]: {e}, could not find any valid trajectories from the last 3 CFD"
+                                 f"episodes!\nAborting training.")
                 exit(0)
 
         # continue with original PPO-training routine
@@ -323,7 +328,8 @@ class RunTrainingInDebugger:
         self.seed = seed
         self.timeout = timeout
         self.checkpoint = ""
-        self.simulation = "rotatingCylinder2D"
+        # self.simulation = "rotatingCylinder2D"
+        self.simulation = "rotatingPinball2D"
 
     def set_openfoam_bashrc(self, path: str):
         system(f"sed -i '5i # source bashrc for openFOAM for debugging purposes\\n{self.command}' {path}/Allrun.pre")
@@ -354,9 +360,11 @@ if __name__ == "__main__":
         sys.path.insert(0, environ["WM_PROJECT_DIR"])
         chdir(BASE_PATH)
 
-        # test MB-DRL on local machine
-        d_args = RunTrainingInDebugger(episodes=10, runners=4, buffer=4, finish=5, n_input_time_steps=30, seed=0)
-        assert d_args.finish > 4, "finish time needs to be > 4s, (the first 4sec are uncontrolled)"
+        # test MB-DRL on local machine for cylinder2D: base case runs until t = 4s
+        # d_args = RunTrainingInDebugger(episodes=50, runners=4, buffer=4, finish=6, n_input_time_steps=30, seed=0)
+
+        # for pinball: base case runs until t = 200s
+        d_args = RunTrainingInDebugger(episodes=10, runners=2, buffer=2, finish=225, n_input_time_steps=30, seed=0)
 
         # run PPO training
         main(d_args)

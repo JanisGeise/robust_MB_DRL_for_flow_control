@@ -4,6 +4,7 @@ regarding the model training.
 """
 import os
 import sys
+import logging
 import argparse
 import torch as pt
 
@@ -12,6 +13,8 @@ from os.path import join, exists
 
 BASE_PATH = os.environ.get("DRL_BASE", "")
 sys.path.insert(0, BASE_PATH)
+
+logging.basicConfig(level=logging.INFO)
 
 
 class EnvironmentModel(pt.nn.Module):
@@ -78,7 +81,7 @@ def train_model(model: pt.nn.Module, dataloader_train: pt.utils.data.DataLoader,
         try:
             os.mkdir(save_dir)
         except FileExistsError:
-            print(f"Info: directory '{save_dir}' was already created by another process.")
+            logging.info(f"Info: directory '{save_dir}' was already created by another process.")
 
     # optimizer settings
     criterion = pt.nn.MSELoss()
@@ -119,8 +122,8 @@ def train_model(model: pt.nn.Module, dataloader_train: pt.utils.data.DataLoader,
 
         # print some info after every 100 epochs
         if epoch % 100 == 0:
-            print(f"epoch {epoch}, avg. training loss = {round(pt.mean(pt.tensor(training_loss[-50:])).item(), 8)}, "
-                  f"avg. validation loss = {round(pt.mean(pt.tensor(validation_loss[-50:])).item(), 8)}")
+            logging.info(f"epoch {epoch}, avg. train loss = {round(pt.mean(pt.tensor(training_loss[-50:])).item(), 8)}"
+                         f", avg. validation loss = {round(pt.mean(pt.tensor(validation_loss[-50:])).item(), 8)}")
 
         # check every 50 epochs if model performs well on validation data or validation loss converges
         if epoch % 50 == 0 and epoch >= 150:
@@ -157,7 +160,7 @@ def train_env_models(path: str, env_model: EnvironmentModel, data: list, epochs:
         os.mkdir(path)
 
     # train and validate environment models with CFD data from the previous episode
-    print(f"start training environment model no. {model_no}")
+    logging.info(f"start training environment model no. {model_no}")
 
     # move model to GPU if available
     device = "cuda" if pt.cuda.is_available() else "cpu"

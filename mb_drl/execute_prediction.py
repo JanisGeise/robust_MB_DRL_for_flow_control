@@ -1,6 +1,7 @@
 
 import os
 import sys
+import logging
 import argparse
 import torch as pt
 
@@ -9,6 +10,8 @@ from os.path import join
 
 BASE_PATH = os.environ.get("DRL_BASE", "")
 sys.path.insert(0, BASE_PATH)
+
+logging.basicConfig(level=logging.INFO)
 
 from drlfoam.environment.env_model_rotating_cylinder import denormalize_data
 
@@ -32,10 +35,10 @@ def check_trajectories(cl: pt.Tensor, cd: pt.Tensor, actions: pt.Tensor, alpha: 
         # cylinder2D at Re = 100
         bounds = {"cl": 1.3, "cd_max": 3.5, "cd_min": 2.85, "alpha_max": 5e3, "beta_max": 5e3}
     elif n_actions == 3:
-        # TODO: bounds for fluidic pinball
-        bounds = {"cl": 1.3, "cd_max": 3.5, "cd_min": 2.85, "alpha_max": 5e3, "beta_max": 5e3}
+        # pinball2D at Re = 100, still need to be determined correctly
+        bounds = {"cl": 2.5, "cd_max": 2.5, "cd_min": -2.5, "alpha_max": 5e3, "beta_max": 5e3}
     else:
-        print("[check_trajectories]: Warning: no bounds for this environment specified! Only filtering for nan's")
+        logging.warning("[check_trajectories]: no bounds for this environment specified! Only filtering for nan's")
         bounds = {"cl": 1e6, "cd_max": 1e6, "cd_min": 0, "alpha_max": 5e6, "beta_max": 5e6}
 
     status = (True, None)
@@ -152,16 +155,16 @@ def predict_trajectories(env_model: list, episode: int, path: str, states: pt.Te
                   "actions": act_rescaled.squeeze(), "generated_by": "env_models", "rewards": rewards}
 
     elif n_actions == 3:
-        rewards = 1.5 - (1.0 * cd_rescaled.sum(dim=1) + 0.5 * cl_rescaled.sum(dim=1).abs())
+        rewards = 1.5 - (1.0 * cd_rescaled.sum(dim=1) + 0.4 * cl_rescaled.sum(dim=1).abs())
         output = {"states": p_rescaled, "cy_a": cl_rescaled[:, 0], "cy_b": cl_rescaled[:, 1], "cy_c": cl_rescaled[:, 2],
                   "cx_a": cd_rescaled[:, 0], "cx_b": cd_rescaled[:, 1], "cx_c": cd_rescaled[:, 2],
                   "alpha_a": traj_alpha[0, :, 0].to("cpu"), "alpha_b": traj_alpha[0, :, 1].to("cpu"),
                   "alpha_c": traj_alpha[0, :, 2].to("cpu"), "beta_a": traj_beta[0, :, 0].to("cpu"),
                   "beta_b": traj_beta[0, :, 1].to("cpu"), "beta_c": traj_beta[0, :, 2].to("cpu"),
-                  "actions": act_rescaled, "generated_by": "env_models", "rewards": rewards}
+                  "actions": act_rescaled, "generated_by": "env_models", "rewards": rewards.squeeze()}
 
     else:
-        print(f"[execute_prediction] No reward function specified for {n_actions} actions. Exiting...")
+        logging.critical(f"[execute_prediction] No reward function specified for {n_actions} actions. Exiting...")
         exit()
 
     return output, status
@@ -191,7 +194,11 @@ def execute_prediction_slurm(pred_id: int, no: int, train_path: str = "examples/
         pt.cuda.manual_seed_all(no)
 
     shape = (settings["len_traj"], len(settings["env_model"]))
-    r_model, a_model, s_model = pt.zeros(shape), pt.zeros(shape), pt.zeros((shape[0], settings["n_probes"], shape[1]))
+    if settings["n_actions"] == 1:
+        a_model = pt.zeros(shape), pt.zeros(shape)
+    else:
+        a_model = pt.zeros((shape[0], settings["n_actions"], shape[1]))
+    r_model, s_model = pt.zeros((shape[0], settings["n_probes"], shape[1])), pt.zeros(shape)
 
     pred, ok = predict_trajectories(settings["env_model"], settings["episode"], train_path,
                                     trajectories["states"][:, no, :], trajectories["cd"][:, no, :],
@@ -201,7 +208,9 @@ def execute_prediction_slurm(pred_id: int, no: int, train_path: str = "examples/
 
     # only add trajectory to buffer if the values make sense, otherwise discard it
     if ok[0]:
-        # compute the uncertainty of the predictions for the rewards wrt the model number
+        # compute the uncertainty of the predictions for the rewards wrt the model number -> here each runner generates
+        # 1 trajectory for the PPO-agent, so in contrast to local, here each tensor is stored, and then appended to a
+        # list later for evaluation (fill_buffer_from_models, ll.156) -> r_model_tmp (local) = r_model (slurm) and so on
         for model in range(len(settings["env_model"])):
             tmp, _ = predict_trajectories(settings["env_model"], settings["episode"], train_path,
                                           trajectories["states"][:, no, :], trajectories["cd"][:, no, :],
@@ -210,11 +219,15 @@ def execute_prediction_slurm(pred_id: int, no: int, train_path: str = "examples/
                                           settings["n_input"], settings["min_max"], settings["len_traj"],
                                           model_no=model)
             r_model[:, model] = tmp["rewards"]
-            a_model[:, model] = tmp["actions"]
             s_model[:, :, model] = tmp["states"]
 
+            if settings["n_actions"] == 1:
+                a_model[:, model] = tmp["actions"]
+            else:
+                a_model[:, :, model] = tmp["actions"]
+
     # print some info to the slurm*.out, so the log can be assigned to this process
-    print(f"DEBUG: episode no. {settings['episode']}, trajectory no. {pred_id}, valid trajectory: {ok[0]}")
+    logging.debug(f"DEBUG: episode no. {settings['episode']}, trajectory no. {pred_id}, valid trajectory: {ok[0]}")
 
     # save the trajectory, status and uncertainty wrt model
     pt.save({"pred": pred, "ok": ok, "r_model": r_model, "s_model": s_model, "a_model": a_model},
