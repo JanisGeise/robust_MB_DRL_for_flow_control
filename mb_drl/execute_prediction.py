@@ -128,6 +128,8 @@ def predict_trajectories(env_model: list, episode: int, path: str, states: pt.Te
         # use predicted (new) state to get an action for both environment models as new input
         # note: policy network uses real states as input (not scaled to [0, 1]), policy training currently on cpu
         s_real = denormalize_data(traj_p[:, t + n_input_steps, :], min_max["states"])
+
+        # TODO: predicted alpha & beta = const. for all t (pinball only)
         tmp_pred = policy_model(s_real.to("cpu")).squeeze().detach()
         traj_alpha[:, t + n_input_steps, :] = tmp_pred[:, :n_actions]
         traj_beta[:, t + n_input_steps, :] = tmp_pred[:, n_actions:]
@@ -195,10 +197,10 @@ def execute_prediction_slurm(pred_id: int, no: int, train_path: str = "examples/
 
     shape = (settings["len_traj"], len(settings["env_model"]))
     if settings["n_actions"] == 1:
-        a_model = pt.zeros(shape), pt.zeros(shape)
+        a_model = pt.zeros(shape)
     else:
         a_model = pt.zeros((shape[0], settings["n_actions"], shape[1]))
-    r_model, s_model = pt.zeros((shape[0], settings["n_probes"], shape[1])), pt.zeros(shape)
+    r_model, s_model = pt.zeros(shape), pt.zeros((shape[0], settings["n_probes"], shape[1]))
 
     pred, ok = predict_trajectories(settings["env_model"], settings["episode"], train_path,
                                     trajectories["states"][:, no, :], trajectories["cd"][:, no, :],
