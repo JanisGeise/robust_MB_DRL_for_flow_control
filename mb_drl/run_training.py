@@ -189,7 +189,13 @@ def main(args):
         if env_model.n_models == 1:
             switch = (e % 4 == 0)
         else:
-            switch = env_model.determine_switching(e)
+            # for rotatingPinball: the 1st two episodes need to be in CFD, otherwise the rewards of the following
+            # MB-episodes are const. & the policy is not improving
+            if simulation == "rotatingPinball2D" and e < 2:
+                switch = True
+            else:
+                # else switch depending on model-performance
+                switch = env_model.determine_switching(e)
 
         if e == starting_episode or switch:
             # save path of current CFD episode
@@ -361,10 +367,10 @@ if __name__ == "__main__":
         chdir(BASE_PATH)
 
         # test MB-DRL on local machine for cylinder2D: base case runs until t = 4s
-        # d_args = RunTrainingInDebugger(episodes=50, runners=4, buffer=4, finish=6, n_input_time_steps=30, seed=0)
+        # d_args = RunTrainingInDebugger(episodes=20, runners=4, buffer=4, finish=5, n_input_time_steps=30, seed=0)
 
         # for pinball: base case runs until t = 200s
-        d_args = RunTrainingInDebugger(episodes=10, runners=2, buffer=2, finish=225, n_input_time_steps=30, seed=0)
+        d_args = RunTrainingInDebugger(episodes=10, runners=2, buffer=2, finish=220, n_input_time_steps=30, seed=0)
 
         # run PPO training
         main(d_args)

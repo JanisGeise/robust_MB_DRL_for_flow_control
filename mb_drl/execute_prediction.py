@@ -128,8 +128,6 @@ def predict_trajectories(env_model: list, episode: int, path: str, states: pt.Te
         # use predicted (new) state to get an action for both environment models as new input
         # note: policy network uses real states as input (not scaled to [0, 1]), policy training currently on cpu
         s_real = denormalize_data(traj_p[:, t + n_input_steps, :], min_max["states"])
-
-        # TODO: predicted alpha & beta = const. for all t (pinball only)
         tmp_pred = policy_model(s_real.to("cpu")).squeeze().detach()
         traj_alpha[:, t + n_input_steps, :] = tmp_pred[:, :n_actions]
         traj_beta[:, t + n_input_steps, :] = tmp_pred[:, n_actions:]
