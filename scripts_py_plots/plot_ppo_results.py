@@ -83,7 +83,7 @@ def plot_results_vs_episode(settings: dict, cd_mean: Union[list, pt.Tensor], cd_
     fig.tight_layout()
     fig.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=n_cases)
     fig.subplots_adjust(wspace=0.25, top=0.93)
-    plt.savefig(join(settings["main_load_path"], setup["path_controlled"], "plots", "coefficients_vs_episode.png"),
+    plt.savefig(join(settings["main_load_path"], settings["path_controlled"], "plots", "coefficients_vs_episode.png"),
                 dpi=340)
     plt.show(block=False)
     plt.pause(2)
@@ -113,7 +113,7 @@ def plot_rewards_vs_episode(settings: dict, reward_mean: Union[list, pt.Tensor],
     fig.tight_layout()
     ax.legend(loc="lower right", framealpha=1.0, ncol=2)
     fig.subplots_adjust(wspace=0.2)
-    plt.savefig(join(settings["main_load_path"], setup["path_controlled"], "plots", "rewards_vs_episode.png"),
+    plt.savefig(join(settings["main_load_path"], settings["path_controlled"], "plots", "rewards_vs_episode.png"),
                 dpi=340)
     plt.show(block=False)
     plt.pause(2)
@@ -220,7 +220,7 @@ def plot_variance_of_beta_dist(settings: dict, var_beta_dist: Union[list, pt.Ten
     ax.set_ylabel("$mean$ $variance$ $of$ $beta-distribution$", fontsize=13)
     ax.set_xlabel("$e$", fontsize=13)
     ax.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=2)
-    plt.savefig(join(settings["main_load_path"], setup["path_controlled"], "plots", "var_beta_distribution.png"),
+    plt.savefig(join(settings["main_load_path"], settings["path_controlled"], "plots", "var_beta_distribution.png"),
                 dpi=340)
     plt.show(block=False)
     plt.pause(2)
