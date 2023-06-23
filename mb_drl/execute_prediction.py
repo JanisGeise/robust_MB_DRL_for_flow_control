@@ -39,7 +39,7 @@ def check_trajectories(cl: pt.Tensor, cd: pt.Tensor, actions: pt.Tensor, alpha: 
         bounds = {"cl": 2.5, "cd_max": 2.5, "cd_min": -2.5, "alpha_max": 5e3, "beta_max": 5e3}
     else:
         logging.warning("[check_trajectories]: no bounds for this environment specified! Only filtering for nan's")
-        bounds = {"cl": 1e6, "cd_max": 1e6, "cd_min": 0, "alpha_max": 5e6, "beta_max": 5e6}
+        bounds = {"cl": 1e6, "cd_max": 1e6, "cd_min": -1e6, "alpha_max": 5e6, "beta_max": 5e6}
 
     status = (True, None)
     if (pt.max(cl.abs()).item() > bounds["cl"]) or (pt.isnan(cl).any().item()):

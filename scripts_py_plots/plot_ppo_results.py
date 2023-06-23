@@ -33,10 +33,12 @@ from analyze_frequency_spectrum import analyze_frequencies_final_result, analyze
     analyze_frequencies_probes_final_result
 
 
-def plot_results_vs_episode(settings: dict, cd_mean: Union[list, pt.Tensor], cd_std: Union[list, pt.Tensor],
-                            cl_mean: Union[list, pt.Tensor], cl_std: Union[list, pt.Tensor],
-                            actions_mean: Union[list, pt.Tensor], actions_std: Union[list, pt.Tensor],
-                            n_cases: int = 1, plot_action: bool = True) -> None:
+def plot_coefficients_vs_episode(settings: dict, cd_mean: Union[list, pt.Tensor], cd_std: Union[list, pt.Tensor],
+                                 cl_mean: Union[list, pt.Tensor], cl_std: Union[list, pt.Tensor],
+                                 actions_mean: Union[list, pt.Tensor] = None,
+                                 actions_std: Union[list, pt.Tensor] = None,
+                                 n_cases: int = 1, plot_action: bool = False,
+                                 ylabel: list = ["$\\bar{c}_L$", "$\\bar{c}_D$", "$\\bar{\omega}$"]) -> None:
     """
     plot cl, cd and actions (if specified) depending on the episode (training)
 
@@ -49,13 +51,14 @@ def plot_results_vs_episode(settings: dict, cd_mean: Union[list, pt.Tensor], cd_
     :param actions_std: corresponding standard deviation of the actions done over the training periode
     :param n_cases: number of cases to compare (= number of imported data)
     :param plot_action: if 'True' cl, cd and actions will be plotted, otherwise only cl and cd will be plotted
+    :param ylabel: ylabels for plots [cl, cd, action]
     :return: None
     """
     if plot_action:
-        fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(16, 5))
+        fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(6, 3))
         n_subfig = 3
     else:
-        fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(15, 6))
+        fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(6, 3))
         n_subfig = 2
 
     for c in range(n_cases):
@@ -64,25 +67,25 @@ def plot_results_vs_episode(settings: dict, cd_mean: Union[list, pt.Tensor], cd_
                 ax[i].plot(range(len(cl_mean[c])), cl_mean[c], color=settings["color"][c], label=settings["legend"][c])
                 ax[i].fill_between(range(len(cl_mean[c])), cl_mean[c] - cl_std[c], cl_mean[c] + cl_std[c],
                                    color=settings["color"][c], alpha=0.3)
-                ax[i].set_ylabel("$\\bar{c}_L$", fontsize=13)
+                ax[i].set_ylabel(ylabel[0])
 
             elif i == 1:
                 ax[i].plot(range(len(cd_mean[c])), cd_mean[c], color=settings["color"][c])
                 ax[i].fill_between(range(len(cd_mean[c])), cd_mean[c] - cd_std[c], cd_mean[c] + cd_std[c],
                                    color=settings["color"][c], alpha=0.3)
-                ax[i].set_ylabel("$\\bar{c}_D$", fontsize=13)
+                ax[i].set_ylabel(ylabel[1])
 
             elif plot_action:
                 ax[i].plot(range(len(actions_mean[c])), actions_mean[c], color=settings["color"][c])
                 ax[i].fill_between(range(len(actions_mean[c])), actions_mean[c] - actions_std[c],
                                    actions_mean[c] + actions_std[c], color=settings["color"][c], alpha=0.3)
-                ax[i].set_ylabel("$\\bar{\omega}$", fontsize=13)
+                ax[i].set_ylabel(ylabel[2])
 
-            ax[i].set_xlabel("$e$", fontsize=13)
+            ax[i].set_xlabel("$e$")
 
     fig.tight_layout()
-    fig.legend(loc="upper right", framealpha=1.0, fontsize=10, ncol=n_cases)
-    fig.subplots_adjust(wspace=0.25, top=0.93)
+    fig.legend(loc="upper center", framealpha=1.0, ncol=3)
+    fig.subplots_adjust(wspace=0.35, top=0.88)
     plt.savefig(join(settings["main_load_path"], settings["path_controlled"], "plots", "coefficients_vs_episode.png"),
                 dpi=340)
     plt.show(block=False)
@@ -109,7 +112,7 @@ def plot_rewards_vs_episode(settings: dict, reward_mean: Union[list, pt.Tensor],
 
     ax.set_ylabel("$\\bar{r}$")
     ax.set_xlabel("$e$")
-    ax.set_xlim(0, len(reward_mean[0]))
+    ax.set_xlim(0, max([len(i) for i in reward_mean]))
     fig.tight_layout()
     ax.legend(loc="lower right", framealpha=1.0, ncol=2)
     fig.subplots_adjust(wspace=0.2)
@@ -517,8 +520,8 @@ if __name__ == "__main__":
     }
 
     # create directory for plots
-    if not path.exists(setup["main_load_path"] + setup["path_controlled"] + "plots"):
-        mkdir(setup["main_load_path"] + setup["path_controlled"] + "plots")
+    if not path.exists(join(setup["main_load_path"], setup["path_controlled"], "plots")):
+        mkdir(join(setup["main_load_path"], setup["path_controlled"], "plots"))
 
     # use latex fonts
     plt.rcParams.update({"text.usetex": True})
@@ -552,10 +555,9 @@ if __name__ == "__main__":
                             n_cases=len(setup["case_name"]))
 
     # plot mean cl and cd wrt to episode
-    plot_results_vs_episode(setup, cd_mean=averaged_data["mean_cd"], cd_std=averaged_data["std_cd"],
-                            cl_mean=averaged_data["mean_cl"], cl_std=averaged_data["std_cl"],
-                            actions_mean=averaged_data["mean_actions"], actions_std=averaged_data["std_actions"],
-                            n_cases=len(setup["case_name"]), plot_action=False)
+    plot_coefficients_vs_episode(setup, cd_mean=averaged_data["mean_cd"], cd_std=averaged_data["std_cd"],
+                                 cl_mean=averaged_data["mean_cl"], cl_std=averaged_data["std_cl"],
+                                 n_cases=len(setup["case_name"]), plot_action=False)
 
     # plot total rewards received in the training
     plot_total_reward(setup, averaged_data["tot_mean_rewards"], averaged_data["tot_std_rewards"],
