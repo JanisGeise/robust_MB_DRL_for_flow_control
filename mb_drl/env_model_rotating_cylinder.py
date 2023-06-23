@@ -86,12 +86,12 @@ class SetupEnvironmentModel:
         # save train- and validation losses of the environment models (if losses are available)
         if self.n_models == 1:
             try:
-                losses = {"train_loss": loss[0][0], "val_loss": loss[1][0]}
+                losses = {"train_loss": loss[0], "val_loss": loss[1]}
             except IndexError:
                 losses = {"train_loss": [], "val_loss": []}
             self.save(episode, losses, name="env_model_loss")
         else:
-            losses = {"train_loss": [l[0][0] for l in loss if l[0]], "val_loss": [l[0][1] for l in loss if l[0]]}
+            losses = {"train_loss": [l[0] for l in loss if l[0]], "val_loss": [l[1] for l in loss if l[0]]}
             self.save(episode, losses, name="env_model_loss")
 
     def save(self, episode, data, name: str = "observations"):
