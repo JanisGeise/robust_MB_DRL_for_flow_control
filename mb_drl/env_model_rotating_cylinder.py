@@ -91,7 +91,7 @@ class SetupEnvironmentModel:
                 losses = {"train_loss": [], "val_loss": []}
             self.save(episode, losses, name="env_model_loss")
         else:
-            losses = {"train_loss": [l[0] for l in loss if l[0]], "val_loss": [l[1] for l in loss if l[0]]}
+            losses = {"train_loss": [l[0] for l in loss if l[0]], "val_loss": [l[1] for l in loss if l[1]]}
             self.save(episode, losses, name="env_model_loss")
 
     def save(self, episode, data, name: str = "observations"):

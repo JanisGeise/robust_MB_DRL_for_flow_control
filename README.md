@@ -1,7 +1,5 @@
 # Robust model-based deep reinforcement learning for flow control
 ## Abstract
-TODO: update once the final results are available
-
 Active flow control has the potential of achieving remarkable drag reductions in applications for fluid mechanics, when 
 combined with deep reinforcement learning (DRL). The high computational demands for CFD simulations currently limits the 
 applicability of DRL to rather simple cases, such as the flow past a cylinder, as a consequence of the large amount of simulations 
@@ -32,6 +30,12 @@ approach in order to accelerate the training process was implemented by [Eric Sc
 notebook were a consequence of an implementation error when computing the action in the model-based episodes. This error
 was discovered after the [submission of the report](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/tree/submission)
 and corrected afterwards ([commit](https://github.com/JanisGeise/robust_MB_DRL_for_flow_control/commit/b0e3b8c8322a72aec1a7314aa8b93f7369e4f67f)).**
+
+## Current version of the MB-training routine
+This project will not be further updated (except bug fixes). For the current version of the model-based training 
+please go to [drlfoam (branch 'mb_drl')](https://github.com/JanisGeise/drlfoam/tree/mb_drl). Updated versions of the post-processing scripts for the PPO-training can be found 
+[here](https://github.com/JanisGeise/MB_DRL_for_accelerated_learning_from_CFD) along with example datasets
+generated with the current version of the model-based training routine. 
 
 ## Getting started
 ### General information
