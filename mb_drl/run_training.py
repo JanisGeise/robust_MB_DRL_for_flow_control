@@ -40,7 +40,9 @@ DEFAULT_CONFIG = {
             "n_layers": 2,
             "n_neurons": 64,
             "activation": pt.nn.functional.relu
-        }
+        },
+        "policy_lr": 1.0e-4,
+        "value_lr": 1.0e-4
     },
     "rotatingPinball2D" : {
         "policy_dict" : {
@@ -53,8 +55,8 @@ DEFAULT_CONFIG = {
             "n_neurons": 512,
             "activation": pt.nn.functional.relu
         },
-        "policy_lr": 1.0e-4,
-        "value_lr": 1.0e-4
+        "policy_lr": 1.0e-5,
+        "value_lr": 1.0e-5
     }
 }
 
@@ -143,9 +145,8 @@ def main(args):
     elif executer == "slurm":
         # Typical Slurm configs for TU Braunschweig cluster
         config = SlurmConfig(
-            n_tasks=env.mpi_ranks, n_nodes=1, partition="queue-1", time="03:00:00",
-            constraint="c5a.24xlarge", modules=["openmpi/4.1.5"], job_name="drl_train",
-            commands_pre=["source /fsx/OpenFOAM/OpenFOAM-v2206/etc/bashrc", "source /fsx/drlfoam_main/setup-env"]
+            n_tasks=env.mpi_ranks, n_nodes=1, partition="standard", time="03:00:00",
+            modules=["singularity/latest", "mpi/openmpi/4.1.1/gcc"], job_name="drl_train"
         )
         """
         # for AWS
